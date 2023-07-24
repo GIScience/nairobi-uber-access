@@ -35,12 +35,19 @@ library(tmap)
 ## 2.2 Data download & process
 
 
-```{r Data Loading}
-uber <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
-uber_feb <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-hourly-nairobi-2019-2.csv")
-uber_april <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-hourly-nairobi-2019-4.csv")
-nairobi_roads <- st_read("/Users/charlie/WRI_Nairobi/nairobi_2019.geojson")
+```{r Data Loading, message=F}
+#uber <- read_csv("movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
+uber_feb <- read_csv("movement-speeds-hourly-nairobi-2019-2.csv")
+uber_april <- read_csv("movement-speeds-hourly-nairobi-2019-4.csv")
+nairobi_roads <- st_read("nairobi_2019.geojson")
+st_crs(nairobi_roads) <- 4326
 ```
+
+```{r}
+
+
+```
+
 
 ```{r Calc means}
 holiday_series <- seq(6,27,1)
@@ -88,6 +95,9 @@ school_break_mean_6am <- school_break_mean_6am |>
 speed_dif_6am <- speed_dif_6am |> 
   left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
   st_as_sf()
+
+
+
 ```
 
 
@@ -97,6 +107,20 @@ speed_dif_6am <- speed_dif_6am |>
 ```{r Data}
 tmap_mode("view")
 
-tm_shape(school_break_mean_6am) +
+tm1 <- tm_shape(school_insession_mean_6am) +
   tm_lines("mean_speed_kph")
+
+tm2 <- tm_shape(school_break_mean_6am) +
+  tm_lines("mean_speed_kph")
+
+tm3 <- tm_shape(speed_dif_6am) +
+  tm_lines("diff_speed_kph")
+
+
+tmap_arrange(tm1,tm2,tm3, sync = T)
+
+```
+
+```{r}
+hist(speed_dif_6am$diff_speed_kph)
 ```
