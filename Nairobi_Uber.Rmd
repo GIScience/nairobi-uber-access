@@ -1,0 +1,102 @@
+---
+title: "Nairobi Uber"
+author: "Charles Hatfield & Marcel Reinmuth"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 Intro
+
+This is the exploratory analysis for school in session versus break and the impacts on mean road speeds
+
+
+
+## 2.1 Libraries
+
+```{r Libraries}
+library(sf)
+library(tidyverse)
+library(rgeoboundaries)
+library(osmextract)
+library(tmap)
+
+```
+
+
+## 2.2 Data download & process
+
+
+```{r Data Loading}
+uber <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
+uber_feb <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-hourly-nairobi-2019-2.csv")
+uber_april <- read_csv("/Users/charlie/WRI_Nairobi/movement-speeds-hourly-nairobi-2019-4.csv")
+nairobi_roads <- st_read("/Users/charlie/WRI_Nairobi/nairobi_2019.geojson")
+```
+
+```{r Calc means}
+holiday_series <- seq(6,27,1)
+
+school_break <- uber_april |>  
+  filter(day %in% holiday_series)
+
+school_insession <- uber_feb |>  
+  filter(day %in% holiday_series)
+
+school_break_mean <- school_break |>  
+  group_by(hour, segment_id, start_junction_id, end_junction_id, 
+           osm_way_id, osm_start_node_id, osm_end_node_id) |>  
+  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+school_insession_mean <- school_insession |> 
+  group_by(hour, segment_id, start_junction_id, end_junction_id, 
+           osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
+  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+```
+
+```{r Filter by Hour and calc differences}
+school_insession_mean_6am <- school_insession_mean |> 
+  filter(hour == 6)
+
+school_break_mean_6am <- school_break_mean |> 
+  filter(hour == 6)
+
+speed_dif_6am <- school_break_mean_6am |> 
+  left_join(school_insession_mean_6am, by = c("osm_start_node_id", "osm_end_node_id")) |> 
+  mutate(diff_speed_kph = mean_speed_kph.x - mean_speed_kph.y)
+```
+
+```{r Left join with geometries}
+school_insession_mean_6am <- school_insession_mean_6am |> 
+  left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
+  st_as_sf()
+
+school_break_mean_6am <- school_break_mean_6am |> 
+  left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
+  st_as_sf()
+
+
+speed_dif_6am <- speed_dif_6am |> 
+  left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
+  st_as_sf()
+```
+
+
+## 3 ESDA 
+
+
+```{r Data}
+tmap_mode("view")
+
+tm_shape(school_break_mean_6am) +
+  tm_lines("mean_speed_kph")
+```
