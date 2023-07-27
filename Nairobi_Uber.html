@@ -3946,6 +3946,12 @@ font-size: 0.90em;
 .tocify .list-group-item {
 border-radius: 0px;
 }
+.tocify-subheader {
+display: inline;
+}
+.tocify-subheader .tocify-item {
+font-size: 0.95em;
+}
 </style>
 
 
@@ -4037,6 +4043,11 @@ nairobi_roads &lt;- st_read(&quot;nairobi_2019.geojson&quot;)
 ## Projected CRS: WGS 84 / Pseudo-Mercator
 st_crs(nairobi_roads) &lt;- 4326</code></pre>
 <p>We look at periods in February and April of 2019.</p>
+<ul>
+<li><p>February period covers school in session</p></li>
+<li><p>April period covers the holiday season</p></li>
+</ul>
+<p>We further filter out weekends</p>
 <pre class="r"><code>holiday &lt;- data.frame(
   date=seq(as.Date(&quot;2019-02-06&quot;), as.Date(&quot;2019-02-26&quot;), by = &quot;day&quot;),
   weekday=wday(seq(as.Date(&quot;2019-02-06&quot;), as.Date(&quot;2019-02-26&quot;), by = &quot;day&quot;), label=T),
@@ -4058,9 +4069,10 @@ uber_ed &lt;- rbind(
   school_holiday, school_insession
 )</code></pre>
 </div>
-</div>
-<div id="post-processing" class="section level1" number="2">
-<h1><span class="header-section-number">2</span> Post-processing</h1>
+<div id="post-processing" class="section level2" number="1.3">
+<h2><span class="header-section-number">1.3</span> Post-processing</h2>
+<p>Aggregate all speed values for every weekday by hour for both
+periods.</p>
 <pre class="r"><code>uber_ed &lt;- uber_ed |&gt;
   group_by(
     year,
@@ -4088,8 +4100,14 @@ nairobi_roads$osmhighway |&gt; table()
 ##       tertiary  tertiary_link          trunk     trunk_link   unclassified 
 ##          15164            146           4014            524          82886</code></pre>
 </div>
-<div id="analysis" class="section level1" number="3">
-<h1><span class="header-section-number">3</span> Analysis</h1>
+</div>
+<div id="analysis" class="section level1" number="2">
+<h1><span class="header-section-number">2</span> Analysis</h1>
+<div id="speed-by-hour-of-day" class="section level2" number="2.1">
+<h2><span class="header-section-number">2.1</span> Speed by hour of
+day</h2>
+<p>Distribution of mean speed values for both periods <em>school in
+session</em> and holidays for every hour of the day as boxplot.</p>
 <pre class="r"><code>uber_ed |&gt; 
   ggplot(aes(x = hour_fact, y = mean_speed_kph, fill = month_fact)) +
   geom_boxplot() +
@@ -4104,6 +4122,8 @@ semester and holiday periods primarily from 6 am to 7 am and from 3 pm
 to 4 pm. This suggests that the school semester may be negatively impact
 traffic congestion and that further investigation to evaluate these
 effects is necessary.</p>
+<p>Next we take a closer look at the mornings at 6 and 7 am and the
+afternoons at 3 and 4 pm.</p>
 <pre class="r"><code>holiday_morn &lt;- school_holiday |&gt;  
   filter(hour %in% c(6,7)) |&gt; 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
@@ -4127,6 +4147,11 @@ school_afternoon &lt;- school_insession |&gt;
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id)  |&gt;  
   dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = &quot;drop&quot;)</code></pre>
+</div>
+<div id="mornings" class="section level2" number="2.2">
+<h2><span class="header-section-number">2.2</span> Mornings</h2>
+<p>Distribution of road segments according to their mean speed in the
+mornings</p>
 <pre class="r"><code># Add an additional column to each dataframe for grouping
 school_morn$group &lt;- &quot;School Semester&quot;
 holiday_morn$group &lt;- &quot;Holiday&quot;
@@ -4178,6 +4203,11 @@ holiday period during the morning rush hour. The number of road segments
 measured for the school semester and holiday period were 16717 and 18356
 segments respectively. The school semester had higher numbers of low
 speed roads despite the lower total road segments measured.</p>
+</div>
+<div id="afternoon" class="section level2" number="2.3">
+<h2><span class="header-section-number">2.3</span> Afternoon</h2>
+<p>Distribution of road segments according to their mean speed in the
+afternoon</p>
 <pre class="r"><code># Add an additional column to each dataframe for grouping
 school_afternoon$group &lt;- &quot;School Semester&quot;
 holiday_afternoon$group &lt;- &quot;Holiday&quot;
@@ -4241,6 +4271,10 @@ afternoon_diff &lt;- holiday_afternoon |&gt;
   left_join(school_afternoon, by = c(&quot;osm_start_node_id&quot;, &quot;osm_end_node_id&quot;)) |&gt; 
   mutate(mean_speed_kph = mean_speed_kph.x - mean_speed_kph.y) |&gt; 
   filter(is.na(mean_speed_kph) == FALSE)</code></pre>
+</div>
+<div id="mean-speed-difference-distribution-mornings-and-afternoon" class="section level2" number="2.4">
+<h2><span class="header-section-number">2.4</span> Mean speed difference
+distribution mornings and afternoon</h2>
 <pre class="r"><code>morn_diff$period &lt;- &quot;Morning&quot;
 afternoon_diff$period &lt;- &quot;Afternoon&quot;
 
@@ -4431,6 +4465,9 @@ afternoon_roadcounts &lt;- afternoon_roadcounts  |&gt;
     rep_top10_afternoon = if_else(top10_n &lt; expected_n10, &quot;underrepresented&quot;, &quot;overrepresented&quot;),
     rep_top20_afternoon = if_else(top20_n &lt; expected_n20, &quot;underrepresented&quot;, &quot;overrepresented&quot;)
   )</code></pre>
+</div>
+<div id="binominal-test" class="section level2" number="2.5">
+<h2><span class="header-section-number">2.5</span> Binominal test</h2>
 <pre class="r"><code>
 combined_tables &lt;- left_join(
   select(morn_roadcounts, osmhighway, top10_morn = top10_n, expected10_morn = expected_n10, rep_top10_morn, binom_test_pval_top10_morn = binom_test_pval_top10, top20_morn = top20_n, expected20_morn = expected_n20, rep_top20_morn,
@@ -4446,8 +4483,8 @@ combined_tables |&gt; datatable(width = &quot;100%&quot;, extensions = &quot;Fix
       paging = TRUE, searching = TRUE, info = FALSE,
       sort = TRUE, scrollX = TRUE, fixedColumns = list(leftColumns = 2)
     ))</code></pre>
-<div id="htmlwidget-d9642f1677b85bc0f973" style="width:100%;height:auto;" class="datatables html-widget"></div>
-<script type="application/json" data-for="htmlwidget-d9642f1677b85bc0f973">{"x":{"filter":"none","extensions":["FixedColumns"],"data":[["1","2","3","4","5","6","7","8","9","10","11","12","13"],["motorway","motorway_link","primary","primary_link","residential","secondary","secondary_link","service","tertiary","tertiary_link","trunk","trunk_link","unclassified"],[54,12,267,13,337,1186,7,6,529,0,187,20,147],[86.1,18.4,227.9,17,331.4,919.7,10.6,3,739.4,1.5,167.9,34.8,207.2],["underrepresented","underrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.000135209421754174,0.138924599907539,0.00716716583623733,0.370427217859344,0.750091920480733,5.02376669476191e-19,0.329087707737735,0.115581266675096,1.53691861565487e-17,1,0.122107790880796,0.00705941080466744,4.5482747885574e-06],[102,27,515,31,722,2086,18,9,1242,2,357,45,374],[172.2,36.8,455.8,34,662.8,1839.4,21.2,6,1478.8,3,335.8,69.6,414.4],["underrepresented","underrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.0779244941437064,0.0477771782317326,5.26031629230825e-69,0.00117403377446449,3.14033758268176e-88,2.89807197219387e-275,0.02264750003896,0.0020198290052583,5.59616781038141e-72,0.656848113175585,3.64899460540226e-42,0.0735415874720319,1.07405204520273e-28],[30,12,225,15,847,1327,9,6,1000,3,317,19,336],[94.2,24.7,327.9,19.2,741.8,1229.6,19.1,4.3,1018.8,3.8,222.2,43.6,396.3],["underrepresented","underrepresented","underrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[2.28909460352077e-15,0.00547470306893632,3.56599411926863e-10,0.398392520771445,6.65886744791187e-05,0.00371750620844126,0.0110366280214804,0.43925545409036,0.552197227621827,1,2.13872717722293e-10,2.02414726672907e-05,0.00123042149874458],[61,30,439,32,1675,2534,19,9,2172,6,542,50,722],[188.4,49.4,655.8,38.4,1483.6,2459.2,38.2,8.6,2037.6,7.6,444.4,87.2,792.6],["underrepresented","underrepresented","underrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.000171837242979884,0.244405330292824,6.2299950537417e-10,0.00370450240476334,2.60724727354269e-219,1.62512433125859e-266,1,0.035146729496846,1.27883642625141e-248,0.270042770958711,5.48447405843192e-85,0.299375523939096,2.25212973405558e-55]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>osmhighway<\/th>\n      <th>top10_morn<\/th>\n      <th>expected10_morn<\/th>\n      <th>rep_top10_morn<\/th>\n      <th>binom_test_pval_top10_morn<\/th>\n      <th>top20_morn<\/th>\n      <th>expected20_morn<\/th>\n      <th>rep_top20_morn<\/th>\n      <th>binom_test_pval_top20_morn<\/th>\n      <th>top10_afternoon<\/th>\n      <th>expected10_afternoon<\/th>\n      <th>rep_top10_afternoon<\/th>\n      <th>binom_test_pval_top10_afternoon<\/th>\n      <th>top20_afternoon<\/th>\n      <th>expected20_afternoon<\/th>\n      <th>rep_top20_afternoon<\/th>\n      <th>binom_test_pval_top20_afternoon<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"paging":true,"searching":true,"info":false,"sort":true,"scrollX":true,"fixedColumns":{"leftColumns":2},"columnDefs":[{"className":"dt-right","targets":[2,3,5,6,7,9,10,11,13,14,15,17]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-4ce6832b74f734433565" style="width:100%;height:auto;" class="datatables html-widget"></div>
+<script type="application/json" data-for="htmlwidget-4ce6832b74f734433565">{"x":{"filter":"none","extensions":["FixedColumns"],"data":[["1","2","3","4","5","6","7","8","9","10","11","12","13"],["motorway","motorway_link","primary","primary_link","residential","secondary","secondary_link","service","tertiary","tertiary_link","trunk","trunk_link","unclassified"],[54,12,267,13,337,1186,7,6,529,0,187,20,147],[86.1,18.4,227.9,17,331.4,919.7,10.6,3,739.4,1.5,167.9,34.8,207.2],["underrepresented","underrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.000135209421754174,0.138924599907539,0.00716716583623733,0.370427217859344,0.750091920480733,5.02376669476191e-19,0.329087707737735,0.115581266675096,1.53691861565487e-17,1,0.122107790880796,0.00705941080466744,4.5482747885574e-06],[102,27,515,31,722,2086,18,9,1242,2,357,45,374],[172.2,36.8,455.8,34,662.8,1839.4,21.2,6,1478.8,3,335.8,69.6,414.4],["underrepresented","underrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.0779244941437064,0.0477771782317326,5.26031629230825e-69,0.00117403377446449,3.14033758268176e-88,2.89807197219387e-275,0.02264750003896,0.0020198290052583,5.59616781038141e-72,0.656848113175585,3.64899460540226e-42,0.0735415874720319,1.07405204520273e-28],[30,12,225,15,847,1327,9,6,1000,3,317,19,336],[94.2,24.7,327.9,19.2,741.8,1229.6,19.1,4.3,1018.8,3.8,222.2,43.6,396.3],["underrepresented","underrepresented","underrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[2.28909460352077e-15,0.00547470306893632,3.56599411926863e-10,0.398392520771445,6.65886744791187e-05,0.00371750620844126,0.0110366280214804,0.43925545409036,0.552197227621827,1,2.13872717722293e-10,2.02414726672907e-05,0.00123042149874458],[61,30,439,32,1675,2534,19,9,2172,6,542,50,722],[188.4,49.4,655.8,38.4,1483.6,2459.2,38.2,8.6,2037.6,7.6,444.4,87.2,792.6],["underrepresented","underrepresented","underrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","overrepresented","underrepresented","overrepresented","underrepresented","underrepresented"],[0.000171837242979884,0.244405330292824,6.2299950537417e-10,0.00370450240476334,2.60724727354269e-219,1.62512433125859e-266,1,0.035146729496846,1.27883642625141e-248,0.270042770958711,5.48447405843192e-85,0.299375523939096,2.25212973405558e-55]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>osmhighway<\/th>\n      <th>top10_morn<\/th>\n      <th>expected10_morn<\/th>\n      <th>rep_top10_morn<\/th>\n      <th>binom_test_pval_top10_morn<\/th>\n      <th>top20_morn<\/th>\n      <th>expected20_morn<\/th>\n      <th>rep_top20_morn<\/th>\n      <th>binom_test_pval_top20_morn<\/th>\n      <th>top10_afternoon<\/th>\n      <th>expected10_afternoon<\/th>\n      <th>rep_top10_afternoon<\/th>\n      <th>binom_test_pval_top10_afternoon<\/th>\n      <th>top20_afternoon<\/th>\n      <th>expected20_afternoon<\/th>\n      <th>rep_top20_afternoon<\/th>\n      <th>binom_test_pval_top20_afternoon<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"paging":true,"searching":true,"info":false,"sort":true,"scrollX":true,"fixedColumns":{"leftColumns":2},"columnDefs":[{"className":"dt-right","targets":[2,3,5,6,7,9,10,11,13,14,15,17]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
 <p><strong>Binomial test shows that or many road types they are
 significantly over and underepresented in the top 10 and 20 percentile
 of road segments with the highest speed differences between the school
@@ -4473,6 +4510,7 @@ overrepresented.</strong></p>
 across the city in the morning and afternoon, but across time periods,
 secondary roads tend to be highly overrepresented while motorways and
 tertiary roads tend to be underrepresented.</strong></p>
+</div>
 </div>
 
 
@@ -4538,7 +4576,7 @@ $(document).ready(function ()  {
       ignoreSelector: ".toc-ignore",
       scrollTo: 0
     };
-    options.showAndHide = true;
+    options.showAndHide = false;
     options.smoothScroll = true;
 
     // tocify

@@ -8,7 +8,7 @@ output:
     toc: true
     number_sections: true
     toc_float:
-      collapsed: true
+      collapsed: false
     theme: cerulean
 ---
 
@@ -17,8 +17,6 @@ knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, message=FALSE, warning=FALSE
 ```
 
 This is the exploratory analysis for school in session versus break and the impacts on mean road speeds. This purely focused on the change in speeds by road segment. Routing & traveltime will be investigated elsewhere.
-
-
 
 # Setup
 
@@ -38,17 +36,13 @@ library(DT)
 
 ```
 
-
 ## Data acquisition & preprocess
 
-We use free and open speed traffic data from Uber for Nairobi, available here:
-https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2019&tp[q]=1
+We use free and open speed traffic data from Uber for Nairobi, available here: [https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2019&tp[q]=1](https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp%5By%5D=2019&tp%5Bq%5D=1){.uri}
 
-Uber provides a toolkit software via npm to generate the respective road segments in a geo format. The package is available here: https://www.npmjs.com/package/movement-data-toolkit.
-We generated the road segments as geojson.
+Uber provides a toolkit software via npm to generate the respective road segments in a geo format. The package is available here: <https://www.npmjs.com/package/movement-data-toolkit>. We generated the road segments as geojson.
 
 **Important**: Uber movement data covers the period 2018-2020. Via the attribute `osm_way_id` the speed traffic information can be linked to the OpenStreetMap (OSM) road network. It is not clear how well the ids from the covered period match with the current OSM data. OSM ids are stable when attributes or the geometry of a object is changed. Howevery newly added data and deleted objects are potentially ommitted when using uber traffic information from years ago but current OSM road network data.
-
 
 ```{r "Data Loading", warning=FALSE, message=FALSE}
 #uber <- read_csv("movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
@@ -59,7 +53,13 @@ st_crs(nairobi_roads) <- 4326
 
 ```
 
-We look at periods in February and April of 2019. 
+We look at periods in February and April of 2019.
+
+-   February period covers school in session
+
+-   April period covers the holiday season
+
+We further filter out weekends
 
 ```{r "Set School and Holiday dfs"}
 holiday <- data.frame(
@@ -84,8 +84,9 @@ uber_ed <- rbind(
 )
 ```
 
-# Post-processing
+## Post-processing
 
+Aggregate all speed values for every weekday by hour for both periods.
 
 ```{r "Hourly Mean Speed Boxplots"}
 uber_ed <- uber_ed |>
@@ -113,7 +114,11 @@ nairobi_roads$osmhighway |> table()
 
 # Analysis
 
-```{r}
+## Speed by hour of day
+
+Distribution of mean speed values for both periods *school in session* and holidays for every hour of the day as boxplot.
+
+```{r boxplot}
 uber_ed |> 
   ggplot(aes(x = hour_fact, y = mean_speed_kph, fill = month_fact)) +
   geom_boxplot() +
@@ -123,9 +128,9 @@ uber_ed |>
 
 ```
 
-
 **School semester morning and afternoon rush hours appear to impact overall congestion**. The key takeaway from this boxplot is that we see a positive divergence in mean kph between the school semester and holiday periods primarily from 6 am to 7 am and from 3 pm to 4 pm. This suggests that the school semester may be negatively impact traffic congestion and that further investigation to evaluate these effects is necessary.
 
+Next we take a closer look at the mornings at 6 and 7 am and the afternoons at 3 and 4 pm.
 
 ```{r "Calc Traffic Speed Means"}
 holiday_morn <- school_holiday |>  
@@ -154,6 +159,9 @@ school_afternoon <- school_insession |>
 
 ```
 
+## Mornings
+
+Distribution of road segments according to their mean speed in the mornings
 
 ```{r "Mean kph Histograms Morning"}
 # Add an additional column to each dataframe for grouping
@@ -202,9 +210,11 @@ ggplot(combined_df, aes(x = mean_speed_kph, fill = group)) +
 
 ```
 
-
 **Concentration of slow roads in morning**. A histogram of mean speeds for all road segments show overlapping but distinct distributions, means, and medians between the school semester and holiday period during the morning rush hour. The number of road segments measured for the school semester and holiday period were 16717 and 18356 segments respectively. The school semester had higher numbers of low speed roads despite the lower total road segments measured.
 
+##  Afternoon
+
+Distribution of road segments according to their mean speed in the afternoon
 
 ```{r "Mean kph Histograms Afternoon"}
 # Add an additional column to each dataframe for grouping
@@ -253,9 +263,7 @@ ggplot(combined_df, aes(x = mean_speed_kph, fill = group)) +
 
 ```
 
-
 **Differences less notable in afternoon**. A histogram of mean speeds for all road segments for the afternoon shows less difference between the two distributions and their summary statistics. The number of road segments measured for the school semester and holiday period were 24099 and 27175 segments respectively. The holiday period had higher numbers of high speed road segments as compared to the school semester part of this may be do the higher number of roads measured, but the difference in total road segments measured doesn't account for the difference in distribution of low and high speed road segments for the holiday period.
-
 
 ```{r "Calc kph Differences"}
 morn_diff <- holiday_morn |> 
@@ -268,6 +276,8 @@ afternoon_diff <- holiday_afternoon |>
   mutate(mean_speed_kph = mean_speed_kph.x - mean_speed_kph.y) |> 
   filter(is.na(mean_speed_kph) == FALSE)
 ```
+
+## Mean speed difference distribution mornings and afternoon
 
 ```{r "Difference in kph histogram"}
 morn_diff$period <- "Morning"
@@ -314,9 +324,7 @@ ggplot(combined_diff, aes(x = mean_speed_kph, fill = period)) +
   )
 ```
 
-**Majority of road segments slower during school semester** Road segments during the school semester versus the holiday were both slower on average and slower for the majority of roads during the school semester as compared to the holiday period. The difference in speeds was more pronounced in the morning than it was in the afternoon. 
-
-
+**Majority of road segments slower during school semester** Road segments during the school semester versus the holiday were both slower on average and slower for the majority of roads during the school semester as compared to the holiday period. The difference in speeds was more pronounced in the morning than it was in the afternoon.
 
 ```{r "Summary Statistics"}
 summary_fun <- function(df, name) {
@@ -347,6 +355,7 @@ pivoted_summary <- combined_summary |>
 print(pivoted_summary)
 
 ```
+
 **Differences in speed were signficant across time periods** Based on a quick eye test despite relatively small differences in speed magnitudally (only a few kph difference) all differences appear significant due to the high road segment sample sizes and small standard errors relative to mean differences
 
 ```{r "Join to roads geojson"}
@@ -362,7 +371,6 @@ afternoon_diff <- afternoon_diff |>
   st_drop_geometry() |> 
   na.omit()
 ```
-
 
 ```{r "Set quantiles"}
 morn_cutoff_10 <- quantile(morn_diff$mean_speed_kph, 0.90)
@@ -400,7 +408,6 @@ afternoon_top20highway <- afternoon_top_20  |>
   group_by(osmhighway)  |> 
   dplyr::summarise(top20_n = n(), .groups = "drop") 
 ```
-
 
 ```{r "Binomial test"}
 binom_test_func <- function(k, n, p) {
@@ -462,6 +469,8 @@ afternoon_roadcounts <- afternoon_roadcounts  |>
 
 ```
 
+## Binominal test
+
 ```{r "Binomial findings"}
 
 combined_tables <- left_join(
@@ -481,10 +490,6 @@ combined_tables |> datatable(width = "100%", extensions = "FixedColumns",
 
 ```
 
-
-
-
-
-**Binomial test shows that or many road types they are significantly over and underepresented in the top 10 and 20 percentile of road segments with the highest speed differences between the school semester and holiday period** To clarify the percentiles here are taking the top 10% and 20% of road segments with the greatest positive mean difference in speed (experienced faster mean speeds kph) between the school semester and the holiday period. These are the roads that saw the greatest reduction in traffic congestion during the holiday period as compared to the school semester. **Secondary and primary roads were significantly overrepresented** and **tertiary and motorways significant underrepresented** in the **top 10 percentile of road segments with the highest speed differences between the school semester and holiday period in the morning**. In the **top 20 percentile for the morning, trunk roads and residential became significantly overrepresented while secondary and primary roads remain significantly over represented. Tertiary and motorways continued to be significantly under represented in the morning** In the **afternoon across both the top 10 and 20 percentiles, motorways, primary and tertiary roads were significantly underrepresented, while residential, secondary and trunk roads were significantly overrepresented.** 
+**Binomial test shows that or many road types they are significantly over and underepresented in the top 10 and 20 percentile of road segments with the highest speed differences between the school semester and holiday period** To clarify the percentiles here are taking the top 10% and 20% of road segments with the greatest positive mean difference in speed (experienced faster mean speeds kph) between the school semester and the holiday period. These are the roads that saw the greatest reduction in traffic congestion during the holiday period as compared to the school semester. **Secondary and primary roads were significantly overrepresented** and **tertiary and motorways significant underrepresented** in the **top 10 percentile of road segments with the highest speed differences between the school semester and holiday period in the morning**. In the **top 20 percentile for the morning, trunk roads and residential became significantly overrepresented while secondary and primary roads remain significantly over represented. Tertiary and motorways continued to be significantly under represented in the morning** In the **afternoon across both the top 10 and 20 percentiles, motorways, primary and tertiary roads were significantly underrepresented, while residential, secondary and trunk roads were significantly overrepresented.**
 
 **In conclusion we see varying traffic congestion patterns across the city in the morning and afternoon, but across time periods, secondary roads tend to be highly overrepresented while motorways and tertiary roads tend to be underrepresented.**
