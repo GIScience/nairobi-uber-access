@@ -14,113 +14,456 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## 1 Intro
+# Intro
 
 This is the exploratory analysis for school in session versus break and the impacts on mean road speeds
 
 
 
-## 2.1 Libraries
+# Libraries
 
-```{r Libraries}
+```{r "Libraries", warning = FALSE, message = FALSE}
 library(sf)
 library(tidyverse)
 library(rgeoboundaries)
 library(osmextract)
 library(tmap)
+library(kableExtra)
+library(lubridate)
 
 ```
 
 
-## 2.2 Data download & process
+# Preprocess
+
+We use free and open speed traffic data from Uber for Nairobi, available here:
+https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2019&tp[q]=1
 
 
-```{r Data Loading, message=F}
+_This selection may be missing data from 11/12/2019 - 11/15/2019_
+_This selection may be missing data from 9/5/2019 - 9/6/2019_
+
+
+Uber provides a toolkit software via npm to generate the respective road segments in a geo format. The package is available here: https://www.npmjs.com/package/movement-data-toolkit.
+We generated the road segments as geojson.
+
+**Important**: Uber movement data covers the period 2018-2020. Via the attribute `osm_way_id` the speed traffic information can be linked to the OpenStreetMap (OSM) road network. It is not clear how well the ids from the covered period match with the current OSM data. OSM ids are stable when attributes or the geometry of a object is changed. Howevery newly added data and deleted objects are potentially ommitted when using uber traffic information from years ago but current OSM road network data.
+
+
+```{r "Data Loading", warning=FALSE, message=FALSE}
 #uber <- read_csv("movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
-uber_feb <- read_csv("movement-speeds-hourly-nairobi-2019-2.csv")
+uber_jan <- read_csv("movement-speeds-hourly-nairobi-2019-1.csv")
 uber_april <- read_csv("movement-speeds-hourly-nairobi-2019-4.csv")
 nairobi_roads <- st_read("nairobi_2019.geojson")
 st_crs(nairobi_roads) <- 4326
-```
-
-```{r}
-
 
 ```
 
+```{r "Set School and Holiday dfs"}
+holiday <- data.frame(
+  date=seq(as.Date("2019-02-06"), as.Date("2019-02-26"), by = "day"),
+  weekday=wday(seq(as.Date("2019-02-06"), as.Date("2019-02-26"), by = "day"), label=T),
+  day = day(seq(as.Date("2019-02-06"), as.Date("2019-02-26"), by = "day"))) |> 
+  filter(!(weekday %in% c("Sat", "Sun"))) 
 
-```{r Calc means}
-holiday_series <- seq(6,27,1)
+school <- data.frame(date=seq(as.Date("2019-01-02"), as.Date("2019-01-22"), by = "day"), weekday=wday(seq(as.Date("2019-01-02"), as.Date("2019-01-22"), by = "day"), label=T),
+  day = day(seq(as.Date("2019-02-06"), as.Date("2019-02-26"), by = "day")))|> 
+  filter(!(weekday %in% c("Sat", "Sun")))
 
-school_break <- uber_april |>  
-  filter(day %in% holiday_series)
 
-school_insession <- uber_feb |>  
-  filter(day %in% holiday_series)
+school_holiday <- uber_april |>  
+  filter(day %in% holiday$day)
 
-school_break_mean <- school_break |>  
+school_insession <- uber_jan |>  
+  filter(day %in% school$day) 
+  
+uber_ed <- rbind(
+  school_holiday, school_insession
+)
+```
+
+# Post-processing
+
+```{r "Hourly Mean Speed Boxplots"}
+uber_ed <- uber_ed |> 
+  group_by(year, month, hour, segment_id, start_junction_id, end_junction_id, osm_way_id, osm_start_node_id, osm_end_node_id) |>  
+  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+uber_ed$month_fact <- factor(uber_ed$month, labels = c("School Semester", "Holiday"))
+uber_ed$hour_fact <- as.factor(uber_ed$hour)
+
+nairobi_roads$osmhighway |> table()
+
+nairobi_roads |> nrow()
+
+uber_ed |> 
+  ggplot(aes(x = hour_fact, y = mean_speed_kph, fill = month_fact)) +
+  geom_boxplot() +
+  labs(x = "Hour of the Day",
+       y = "Mean Speed kph",
+       fill = "Period")  
+
+```
+
+**School semester morning and afternoon rush hours appear to impact overall congestion**. The key takeaway from this boxplot is that we see a positive divergence in mean kph between the school semester and holiday periods primarily from 6 am to 7 am and from 3 pm to 4 pm. This suggests that the school semester may be negatively impact traffic congestion and that further investigation to evaluate these effects is necessary.
+
+
+```{r "Calc Traffic Speed Means"}
+holiday_morn <- school_holiday |>  
+  filter(hour %in% c(6,7)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id) |>  
   summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
-school_insession_mean <- school_insession |> 
+school_morn <- school_insession |> 
+  filter(hour %in% c(6,7)) |> 
+  group_by(hour, segment_id, start_junction_id, end_junction_id, 
+           osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
+  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+holiday_afternoon <- school_holiday |>  
+  filter(hour %in% c(15,16)) |> 
+  group_by(hour, segment_id, start_junction_id, end_junction_id, 
+           osm_way_id, osm_start_node_id, osm_end_node_id) |>  
+  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+school_afternoon <- school_insession |> 
+  filter(hour %in% c(15,16)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
   summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
 ```
 
-```{r Filter by Hour and calc differences}
-school_insession_mean_6am <- school_insession_mean |> 
-  filter(hour == 6)
 
-school_break_mean_6am <- school_break_mean |> 
-  filter(hour == 6)
+```{r "Mean kph Histograms Morning"}
+# Add an additional column to each dataframe for grouping
+school_morn$group <- "School Semester"
+holiday_morn$group <- "Holiday"
 
-speed_dif_6am <- school_break_mean_6am |> 
-  left_join(school_insession_mean_6am, by = c("osm_start_node_id", "osm_end_node_id")) |> 
-  mutate(diff_speed_kph = mean_speed_kph.x - mean_speed_kph.y)
+
+# Combine the dataframes
+combined_df <- rbind(school_morn, 
+                     holiday_morn)
+
+mean_vals <- combined_df |>
+  group_by(group) |>
+  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "mean")
+
+median_vals <- combined_df |>
+  group_by(group) |>
+  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "median")
+
+statistics_df <- bind_rows(mean_vals, median_vals)
+
+# Plot the histogram
+ggplot(combined_df, aes(x = mean_speed_kph, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  geom_vline(data = statistics_df, aes(xintercept = value, color = group, linetype = type),
+             size = 1) +
+  theme_minimal() +
+  labs(x = "Mean Speed (kph)", 
+       y = "Count", 
+       fill = "Group",
+       color = "Group",
+       linetype = "Statistic",
+       title = "Distribution of Mean Speed during School v Holiday Mornings") +
+  scale_fill_manual(values = c("School Semester" = "dodgerblue3",
+                               "Holiday" = "firebrick1")) + 
+  scale_color_manual(values = c("School Semester" = "dodgerblue3",
+                                "Holiday" = "firebrick1")) +
+  scale_linetype_manual(values = c("mean" = "solid",
+                                   "median" = "dashed")) +
+  theme(legend.position = "top",
+        legend.key.size = unit(2, "lines"),  # Increase legend key size
+        legend.text = element_text(size = 12)  # Increase legend text size
+  )
+
 ```
 
-```{r Left join with geometries}
-school_insession_mean_6am <- school_insession_mean_6am |> 
+
+**Concentration of slow roads in morning**. A histogram of mean speeds for all road segments show overlapping but distinct distributions, means, and medians between the school semester and holiday period during the morning rush hour. The number of road segments measured for the school semester and holiday period were 16717 and 18356 segments respectively. The school semester had higher numbers of low speed roads despite the lower total road segments measured.
+
+
+```{r "Mean kph Histograms Afternoon"}
+# Add an additional column to each dataframe for grouping
+school_afternoon$group <- "School Semester"
+holiday_afternoon$group <- "Holiday"
+
+
+# Combine the dataframes
+combined_df <- rbind(school_afternoon, 
+                     holiday_afternoon)
+
+mean_vals <- combined_df |>
+  group_by(group) |>
+  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "mean")
+
+median_vals <- combined_df |>
+  group_by(group) |>
+  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "median")
+
+statistics_df <- bind_rows(mean_vals, median_vals)
+
+# Plot the histogram
+ggplot(combined_df, aes(x = mean_speed_kph, fill = group)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  geom_vline(data = statistics_df, aes(xintercept = value, color = group, linetype = type),
+             size = 1) +
+  theme_minimal() +
+  labs(x = "Mean Speed (kph)", 
+       y = "Count", 
+       fill = "Group",
+       color = "Group",
+       linetype = "Statistic",
+       title = "Distribution of Mean Speed during School v Holiday Afternoon") +
+  scale_fill_manual(values = c("School Semester" = "dodgerblue3",
+                               "Holiday" = "firebrick1")) + 
+  scale_color_manual(values = c("School Semester" = "dodgerblue3",
+                                "Holiday" = "firebrick1")) +
+  scale_linetype_manual(values = c("mean" = "solid",
+                                   "median" = "dashed")) +
+  theme(legend.position = "top",
+        legend.key.size = unit(2, "lines"),  # Increase legend key size
+        legend.text = element_text(size = 12)  # Increase legend text size
+  )
+
+```
+
+
+**Differences less notable in afternoon**. A histogram of mean speeds for all road segments for the afternoon shows less difference between the two distributions and their summary statistics. The number of road segments measured for the school semester and holiday period were 24099 and 27175 segments respectively. The holiday period had higher numbers of high speed road segments as compared to the school semester part of this may be do the higher number of roads measured, but the difference in total road segments measured doesn't account for the difference in distribution of low and high speed road segments for the holiday period.
+
+
+```{r "Calc kph Differences"}
+morn_diff <- holiday_morn |> 
+  left_join(school_morn, by = c("osm_start_node_id", "osm_end_node_id")) |> 
+  mutate(mean_speed_kph = mean_speed_kph.x - mean_speed_kph.y) |> 
+  filter(is.na(mean_speed_kph) == FALSE)
+
+afternoon_diff <- holiday_afternoon |> 
+  left_join(school_afternoon, by = c("osm_start_node_id", "osm_end_node_id")) |> 
+  mutate(mean_speed_kph = mean_speed_kph.x - mean_speed_kph.y) |> 
+  filter(is.na(mean_speed_kph) == FALSE)
+```
+
+```{r "Difference in kph histogram"}
+morn_diff$period <- "Morning"
+afternoon_diff$period <- "Afternoon"
+
+
+# Combine the dataframes
+combined_diff <- rbind(morn_diff, 
+                     afternoon_diff)
+
+mean_vals_diff <- combined_diff |>
+  group_by(period) |>
+  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "mean")
+
+median_vals_diff <- combined_diff |>
+  group_by(period) |>
+  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  mutate(type = "median")
+
+statistics_diff_df <- bind_rows(mean_vals_diff, median_vals_diff)
+
+# Plot the histogram
+ggplot(combined_diff, aes(x = mean_speed_kph, fill = period)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 50) +
+  geom_vline(data = statistics_diff_df, aes(xintercept = value, color = period, linetype = type),
+             size = 1) +
+  theme_minimal() +
+  labs(x = "Difference in Mean Speed (kph)", 
+       y = "Count", 
+       fill = "Period",
+       color = "Period",
+       linetype = "Statistic",
+       title = "Distribution of Mean kph Difference Holiday v School Semester") +
+  scale_fill_manual(values = c("Morning" = "dodgerblue3",
+                               "Afternoon" = "firebrick1")) + 
+  scale_color_manual(values = c("Morning" = "dodgerblue3",
+                                "Afternoon" = "firebrick1")) +
+  scale_linetype_manual(values = c("mean" = "solid",
+                                   "median" = "dashed")) +
+  theme(legend.position = "top",
+        legend.key.size = unit(2, "lines"),  # Increase legend key size
+        legend.text = element_text(size = 12)  # Increase legend text size
+  )
+```
+
+**Majority of road segments slower during school semester** Road segments during the school semester versus the holiday were both slower on average and slower for the majority of roads during the school semester as compared to the holiday period. The difference in speeds was more pronounced in the morning than it was in the afternoon. 
+
+
+
+```{r "Summary Statistics"}
+summary_fun <- function(df, name) {
+  df |> 
+    summarise(
+      mean = mean(mean_speed_kph, na.rm = TRUE), 
+      median = median(mean_speed_kph, na.rm = TRUE),
+      se = sd(mean_speed_kph, na.rm = TRUE) / sqrt(n()),
+      .groups = "drop"
+    ) |> 
+    mutate(data_frame = name)
+}
+
+summary_df1 <- summary_fun(school_morn, "School Semester Morning")
+summary_df2 <- summary_fun(holiday_morn, "Holiday Morning")
+summary_df3 <- summary_fun(school_afternoon, "School Semester Afternoon")
+summary_df4 <- summary_fun(holiday_afternoon, "Holiday Afternoon")
+summary_df5 <- summary_fun(morn_diff, "School v Holiday Morning")
+summary_df6 <- summary_fun(afternoon_diff, "School v Holiday Afternoon")
+
+
+combined_summary <- bind_rows(summary_df1, summary_df2, summary_df3, summary_df4, summary_df5, summary_df6)
+
+pivoted_summary <- combined_summary |>
+  pivot_longer(-data_frame, names_to = "statistic", values_to = "value") |>
+  pivot_wider(names_from = "data_frame", values_from = "value")
+
+print(pivoted_summary)
+
+```
+**Differences in speed were signficant across time periods** Based on a quick eye test despite relatively small differences in speed magnitudally (only a few kph difference) all differences appear significant due to the high road segment sample sizes and small standard errors relative to mean differences
+
+```{r "Join to roads geojson"}
+morn_diff <- morn_diff |> 
   left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
-  st_as_sf()
+  st_as_sf() |> 
+  st_drop_geometry() |> 
+  na.omit()
 
-school_break_mean_6am <- school_break_mean_6am |> 
+afternoon_diff <- afternoon_diff |> 
   left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
-  st_as_sf()
+  st_as_sf() |> 
+  st_drop_geometry() |> 
+  na.omit()
+```
 
 
-speed_dif_6am <- speed_dif_6am |> 
-  left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
-  st_as_sf()
+```{r "Set quantiles"}
+morn_cutoff_10 <- quantile(morn_diff$mean_speed_kph, 0.90)
+morn_cutoff_20 <- quantile(morn_diff$mean_speed_kph, 0.80)
+
+afternoon_cutoff_10 <- quantile(afternoon_diff$mean_speed_kph, 0.90)
+afternoon_cutoff_20 <- quantile(afternoon_diff$mean_speed_kph, 0.80)
+
+# Filter rows where 'value' is greater than the cutoff
+morn_top_10 <- morn_diff |>
+  filter(mean_speed_kph > morn_cutoff_10)
+
+morn_top_20 <- morn_diff |>
+  filter(mean_speed_kph > morn_cutoff_20)
+
+morn_top10highway <- morn_top_10 |>
+  group_by(osmhighway) |>
+  summarise(top10_n = n(), .groups = "drop") 
+
+morn_top20highway <- morn_top_20 |>
+  group_by(osmhighway) |>
+  summarise(top20_n = n(), .groups = "drop") 
+
+afternoon_top_10 <- afternoon_diff |>
+  filter(mean_speed_kph > afternoon_cutoff_10)
+
+afternoon_top_20 <- afternoon_diff |>
+  filter(mean_speed_kph > afternoon_cutoff_20)
+
+afternoon_top10highway <- afternoon_top_10 |>
+  group_by(osmhighway) |>
+  summarise(top10_n = n(), .groups = "drop") 
+
+afternoon_top20highway <- afternoon_top_20  |> 
+  group_by(osmhighway)  |> 
+  summarise(top20_n = n(), .groups = "drop") 
+```
 
 
+```{r "Binomial test"}
+binom_test_func <- function(k, n, p) {
+  if(k == 0){
+    return(1)
+  } else {
+    p_val <- binom.test(x = k, n = n, p = p, alternative = "two.sided")$p.value
+    return(p_val)
+  }
+}
+
+
+morn_roadcounts <- morn_diff  |> 
+  group_by(osmhighway) |> 
+  summarise(n = n(), .groups = "drop") 
+  
+
+morn_roadcounts <- morn_roadcounts |> 
+  left_join(morn_top10highway, by = "osmhighway") |>
+  left_join(morn_top20highway, by = "osmhighway") |> 
+  mutate(expected_n10 = n * 0.1,
+         percent_top10 = top10_n / n,
+         expected_n20 = n * 0.2,
+         percent_top20 = top20_n / n,
+         p10 = expected_n10 / n,
+         p20 = expected_n10 / n) |> 
+ mutate_at(c(3,4,6), ~replace_na(.,0))
+
+morn_roadcounts <- morn_roadcounts  |> 
+  mutate(
+    binom_test_pval_top10 = mapply(binom_test_func, top10_n, n, p10),
+    binom_test_pval_top20 = mapply(binom_test_func, top20_n, n, p20),
+    rep_top10_morn = if_else(top10_n < expected_n10, "underrepresented", "overrepresented"),
+    rep_top20_morn = if_else(top20_n < expected_n20, "underrepresented", "overrepresented"))
+
+
+afternoon_roadcounts <- afternoon_diff  |> 
+  group_by(osmhighway) |> 
+  summarise(n = n(), .groups = "drop") 
+
+afternoon_roadcounts <- afternoon_roadcounts |> 
+  left_join(afternoon_top10highway, by = "osmhighway") |>
+  left_join(afternoon_top20highway, by = "osmhighway") |> 
+  mutate(expected_n10 = n * 0.1,
+         percent_top10 = top10_n / n,
+         expected_n20 = n * 0.2,
+         percent_top20 = top20_n / n,
+         p10 = expected_n10 / n,
+         p20 = expected_n10 / n) |> 
+ mutate_at(c(3,4,6), ~replace_na(.,0))
+
+afternoon_roadcounts <- afternoon_roadcounts  |> 
+  mutate(
+    binom_test_pval_top10 = mapply(binom_test_func, top10_n, n, p10),
+    binom_test_pval_top20 = mapply(binom_test_func, top20_n, n, p20),
+    rep_top10_afternoon = if_else(top10_n < expected_n10, "underrepresented", "overrepresented"),
+    rep_top20_afternoon = if_else(top20_n < expected_n20, "underrepresented", "overrepresented")
+  )
+
+```
+
+```{r "Binomial findings"}
+
+combined_tables <- left_join(
+  select(morn_roadcounts, osmhighway, top10_morn = top10_n, expected10_morn = expected_n10, rep_top10_morn, binom_test_pval_top10_morn = binom_test_pval_top10, top20_morn = top20_n, expected20_morn = expected_n20, rep_top20_morn,
+         binom_test_pval_top20_morn = binom_test_pval_top20),
+  select(afternoon_roadcounts, osmhighway, top10_afternoon = top10_n, expected10_afternoon = expected_n10, rep_top10_afternoon, binom_test_pval_top10_afternoon = binom_test_pval_top10, top20_afternoon = top20_n, expected20_afternoon = expected_n20, rep_top20_afternoon,
+         binom_test_pval_top20_afternoon = binom_test_pval_top20),
+  by = "osmhighway"
+)
+
+
+combined_tables %>%
+  kable("html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = T)
 
 ```
 
 
-## 3 ESDA 
 
 
-```{r Data}
-tmap_mode("view")
 
-tm1 <- tm_shape(school_insession_mean_6am) +
-  tm_lines("mean_speed_kph")
+**Binomial test shows that or many road types they are significantly over and underepresented in the top 10 and 20 percentile of road segments with the highest speed differences between the school semester and holiday period** To clarify the percentiles here are taking the top 10% and 20% of road segments with the greatest positive mean difference in speed (experienced faster mean speeds kph) between the school semester and the holiday period. These are the roads that saw the greatest reduction in traffic congestion during the holiday period as compared to the school semester. **Secondary and primary roads were significantly overrepresented** and **tertiary and motorways significant underrepresented** in the **top 10 percentile of road segments with the highest speed differences between the school semester and holiday period in the morning**. In the **top 20 percentile for the morning, trunk roads and residential became significantly overrepresented while secondary and primary roads remain significantly over represented. Tertiary and motorways continued to be significantly under represented in the morning** In the **afternoon across both the top 10 and 20 percentiles, motorways, primary and tertiary roads were significantly underrepresented, while residential, secondary and trunk roads were significantly overrepresented.** 
 
-tm2 <- tm_shape(school_break_mean_6am) +
-  tm_lines("mean_speed_kph")
-
-tm3 <- tm_shape(speed_dif_6am) +
-  tm_lines("diff_speed_kph")
-
-
-tmap_arrange(tm1,tm2,tm3, sync = T)
-
-```
-
-```{r}
-hist(speed_dif_6am$diff_speed_kph)
-```
+**In conclusion we see varying traffic congestion patterns across the city in the morning and afternoon, but across time periods, secondary roads tend to be highly overrepresented while motorways and tertiary roads tend to be underrepresented.**
