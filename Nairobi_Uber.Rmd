@@ -4,23 +4,27 @@ author: "Charles Hatfield & Marcel Reinmuth"
 date: "`r Sys.Date()`"
 output: 
   html_document:
+    code_folding: hide
     toc: true
     number_sections: true
-    toc_float: true
+    toc_float:
+      collapsed: true
     theme: cerulean
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, message=FALSE, warning=FALSE)
 ```
 
-# Intro
-
-This is the exploratory analysis for school in session versus break and the impacts on mean road speeds
+This is the exploratory analysis for school in session versus break and the impacts on mean road speeds. This purely focused on the change in speeds by road segment. Routing & traveltime will be investigated elsewhere.
 
 
 
-# Libraries
+# Setup
+
+## Libraries
+
+The following libraries are used for in this R markdown document.
 
 ```{r "Libraries", warning = FALSE, message = FALSE}
 library(sf)
@@ -30,19 +34,15 @@ library(osmextract)
 library(tmap)
 library(kableExtra)
 library(lubridate)
+library(DT)
 
 ```
 
 
-# Preprocess
+## Data acquisition & preprocess
 
 We use free and open speed traffic data from Uber for Nairobi, available here:
 https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2019&tp[q]=1
-
-
-_This selection may be missing data from 11/12/2019 - 11/15/2019_
-_This selection may be missing data from 9/5/2019 - 9/6/2019_
-
 
 Uber provides a toolkit software via npm to generate the respective road segments in a geo format. The package is available here: https://www.npmjs.com/package/movement-data-toolkit.
 We generated the road segments as geojson.
@@ -58,6 +58,8 @@ nairobi_roads <- st_read("nairobi_2019.geojson")
 st_crs(nairobi_roads) <- 4326
 
 ```
+
+We look at periods in February and April of 2019. 
 
 ```{r "Set School and Holiday dfs"}
 holiday <- data.frame(
@@ -84,18 +86,34 @@ uber_ed <- rbind(
 
 # Post-processing
 
+
 ```{r "Hourly Mean Speed Boxplots"}
-uber_ed <- uber_ed |> 
-  group_by(year, month, hour, segment_id, start_junction_id, end_junction_id, osm_way_id, osm_start_node_id, osm_end_node_id) |>  
-  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+uber_ed <- uber_ed |>
+  group_by(
+    year,
+    month,
+    hour,
+    segment_id,
+    start_junction_id,
+    end_junction_id,
+    osm_way_id,
+    osm_start_node_id,
+    osm_end_node_id
+  ) |>
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE),
+            .groups = "drop")
 
 uber_ed$month_fact <- factor(uber_ed$month, labels = c("School Semester", "Holiday"))
 uber_ed$hour_fact <- as.factor(uber_ed$hour)
 
 nairobi_roads$osmhighway |> table()
 
-nairobi_roads |> nrow()
 
+```
+
+# Analysis
+
+```{r}
 uber_ed |> 
   ggplot(aes(x = hour_fact, y = mean_speed_kph, fill = month_fact)) +
   geom_boxplot() +
@@ -105,6 +123,7 @@ uber_ed |>
 
 ```
 
+
 **School semester morning and afternoon rush hours appear to impact overall congestion**. The key takeaway from this boxplot is that we see a positive divergence in mean kph between the school semester and holiday periods primarily from 6 am to 7 am and from 3 pm to 4 pm. This suggests that the school semester may be negatively impact traffic congestion and that further investigation to evaluate these effects is necessary.
 
 
@@ -113,25 +132,25 @@ holiday_morn <- school_holiday |>
   filter(hour %in% c(6,7)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id) |>  
-  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
 school_morn <- school_insession |> 
   filter(hour %in% c(6,7)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
-  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
 holiday_afternoon <- school_holiday |>  
   filter(hour %in% c(15,16)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id) |>  
-  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
 school_afternoon <- school_insession |> 
   filter(hour %in% c(15,16)) |> 
   group_by(hour, segment_id, start_junction_id, end_junction_id, 
            osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
-  summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
 
 ```
 
@@ -148,12 +167,12 @@ combined_df <- rbind(school_morn,
 
 mean_vals <- combined_df |>
   group_by(group) |>
-  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "mean")
 
 median_vals <- combined_df |>
   group_by(group) |>
-  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "median")
 
 statistics_df <- bind_rows(mean_vals, median_vals)
@@ -199,12 +218,12 @@ combined_df <- rbind(school_afternoon,
 
 mean_vals <- combined_df |>
   group_by(group) |>
-  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "mean")
 
 median_vals <- combined_df |>
   group_by(group) |>
-  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "median")
 
 statistics_df <- bind_rows(mean_vals, median_vals)
@@ -261,12 +280,12 @@ combined_diff <- rbind(morn_diff,
 
 mean_vals_diff <- combined_diff |>
   group_by(period) |>
-  summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = mean(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "mean")
 
 median_vals_diff <- combined_diff |>
   group_by(period) |>
-  summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
+  dplyr::summarise(value = median(mean_speed_kph, na.rm = TRUE)) |>
   mutate(type = "median")
 
 statistics_diff_df <- bind_rows(mean_vals_diff, median_vals_diff)
@@ -302,7 +321,7 @@ ggplot(combined_diff, aes(x = mean_speed_kph, fill = period)) +
 ```{r "Summary Statistics"}
 summary_fun <- function(df, name) {
   df |> 
-    summarise(
+    dplyr::summarise(
       mean = mean(mean_speed_kph, na.rm = TRUE), 
       median = median(mean_speed_kph, na.rm = TRUE),
       se = sd(mean_speed_kph, na.rm = TRUE) / sqrt(n()),
@@ -361,11 +380,11 @@ morn_top_20 <- morn_diff |>
 
 morn_top10highway <- morn_top_10 |>
   group_by(osmhighway) |>
-  summarise(top10_n = n(), .groups = "drop") 
+  dplyr::summarise(top10_n = n(), .groups = "drop") 
 
 morn_top20highway <- morn_top_20 |>
   group_by(osmhighway) |>
-  summarise(top20_n = n(), .groups = "drop") 
+  dplyr::summarise(top20_n = n(), .groups = "drop") 
 
 afternoon_top_10 <- afternoon_diff |>
   filter(mean_speed_kph > afternoon_cutoff_10)
@@ -375,11 +394,11 @@ afternoon_top_20 <- afternoon_diff |>
 
 afternoon_top10highway <- afternoon_top_10 |>
   group_by(osmhighway) |>
-  summarise(top10_n = n(), .groups = "drop") 
+  dplyr::summarise(top10_n = n(), .groups = "drop") 
 
 afternoon_top20highway <- afternoon_top_20  |> 
   group_by(osmhighway)  |> 
-  summarise(top20_n = n(), .groups = "drop") 
+  dplyr::summarise(top20_n = n(), .groups = "drop") 
 ```
 
 
@@ -396,7 +415,7 @@ binom_test_func <- function(k, n, p) {
 
 morn_roadcounts <- morn_diff  |> 
   group_by(osmhighway) |> 
-  summarise(n = n(), .groups = "drop") 
+  dplyr::summarise(n = n(), .groups = "drop") 
   
 
 morn_roadcounts <- morn_roadcounts |> 
@@ -420,7 +439,7 @@ morn_roadcounts <- morn_roadcounts  |>
 
 afternoon_roadcounts <- afternoon_diff  |> 
   group_by(osmhighway) |> 
-  summarise(n = n(), .groups = "drop") 
+  dplyr::summarise(n = n(), .groups = "drop") 
 
 afternoon_roadcounts <- afternoon_roadcounts |> 
   left_join(afternoon_top10highway, by = "osmhighway") |>
@@ -454,9 +473,11 @@ combined_tables <- left_join(
 )
 
 
-combined_tables %>%
-  kable("html") %>% 
-  kable_styling(bootstrap_options = "striped", full_width = T)
+combined_tables |> datatable(width = "100%", extensions = "FixedColumns",
+    options = list(
+      paging = TRUE, searching = TRUE, info = FALSE,
+      sort = TRUE, scrollX = TRUE, fixedColumns = list(leftColumns = 2)
+    ))
 
 ```
 
