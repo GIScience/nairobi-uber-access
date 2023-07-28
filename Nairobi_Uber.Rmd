@@ -212,7 +212,7 @@ ggplot(combined_df, aes(x = mean_speed_kph, fill = group)) +
 
 **Concentration of slow roads in morning**. A histogram of mean speeds for all road segments show overlapping but distinct distributions, means, and medians between the school semester and holiday period during the morning rush hour. The number of road segments measured for the school semester and holiday period were 16717 and 18356 segments respectively. The school semester had higher numbers of low speed roads despite the lower total road segments measured.
 
-##  Afternoon
+## Afternoon
 
 Distribution of road segments according to their mean speed in the afternoon
 
@@ -493,3 +493,17 @@ combined_tables |> datatable(width = "100%", extensions = "FixedColumns",
 **Binomial test shows that or many road types they are significantly over and underepresented in the top 10 and 20 percentile of road segments with the highest speed differences between the school semester and holiday period** To clarify the percentiles here are taking the top 10% and 20% of road segments with the greatest positive mean difference in speed (experienced faster mean speeds kph) between the school semester and the holiday period. These are the roads that saw the greatest reduction in traffic congestion during the holiday period as compared to the school semester. **Secondary and primary roads were significantly overrepresented** and **tertiary and motorways significant underrepresented** in the **top 10 percentile of road segments with the highest speed differences between the school semester and holiday period in the morning**. In the **top 20 percentile for the morning, trunk roads and residential became significantly overrepresented while secondary and primary roads remain significantly over represented. Tertiary and motorways continued to be significantly under represented in the morning** In the **afternoon across both the top 10 and 20 percentiles, motorways, primary and tertiary roads were significantly underrepresented, while residential, secondary and trunk roads were significantly overrepresented.**
 
 **In conclusion we see varying traffic congestion patterns across the city in the morning and afternoon, but across time periods, secondary roads tend to be highly overrepresented while motorways and tertiary roads tend to be underrepresented.**
+
+# Other
+
+Other analysis/viz that was conducted so far
+
+## Isochrone visualization
+
+
+
+
+```{r rstudio-create-Rproj, out.width = '100%', echo=FALSE, fig.cap = 'Isochrones of 300, 600 and 1200 seconds for Nairobi for every hour in the first quater of 2018. The speed values are aggregated by hour of weekday for the first quarter of 2018.'}
+knitr::include_graphics("map2.gif")
+```
+
