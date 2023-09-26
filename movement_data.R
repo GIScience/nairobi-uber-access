@@ -2,7 +2,6 @@
 library(httr)
 
 library(sf)
-library(rgeoboundaries)
 library(osmdata)
 library(mapview)
 library(glue)
@@ -28,14 +27,23 @@ gp2sf <- function(gp) {
     pull(1)
 }
 
+if (!file.exists("nairobi_boundary.gpkg")) {
+  nairobi <- opq(bbox = 'Nairobi, Kenya') |>
+    add_osm_feature(key = 'name', value = 'Nairobi') |>
+    add_osm_feature(key = 'admin_level', value = '3') |>
+    osmdata_sf()
+  nairobi_boundary <- nairobi$osm_multipolygons
 
-# nairobi <- opq(bbox = 'Nairobi, Kenya') |>
-#   add_osm_feature(key = 'name', value = 'Nairobi') |>
-#   add_osm_feature(key = 'admin_level', value = '3') |>
-#   osmdata_sf()
-# nairobi_boundary <- nairobi$osm_multipolygons
 
-nairobi_boundary <-gb_adm1("Kenya") |> filter(shapeName=="Nairobi")
+  #library(rgeoboundaries)
+  #nairobi_boundary <- gb_adm1("Kenya") |> filter(shapeName=="Nairobi")
+
+  nairobi_boundary |> st_write("nairobi_boundary.gpkg", append=F)
+} else {
+  nairobi_boundary <- st_read("nairobi_boundary.gpkg")
+}
+
+
 #kenya_wards <- gb_adm4("Kenya")
 kenya_wards <- st_read("Kenya_Wards/kenya_wards.shp")
 kenya_wards <- kenya_wards |>  st_make_valid()
@@ -54,6 +62,8 @@ hex_grid <- st_sf(rnr=row_number(hex_grid), geom=hex_grid$geom, centroid=st_cent
 
 nrow(hex_grid)
 nrow(kenya_wards)
+
+kenya_wards
 
 hex_grid_centroid <- st_sf(rnr=hex_grid$rnr, geom=hex_grid$centroid)
 hex_grid_centroid <- hex_grid_centroid |>  st_join(kenya_wards)
