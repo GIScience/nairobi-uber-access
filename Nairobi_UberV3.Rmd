@@ -1,0 +1,477 @@
+---
+title: "Nairobi UberV3"
+author: "Charles Hatfield & Marcel Reinmuth"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float:
+      collapsed: false
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, message=FALSE, warning=FALSE)
+```
+
+This is the exploratory analysis for school in session versus break and the impacts on mean road speeds. This purely focused on the change in speeds by road segment. Routing & traveltime will be investigated elsewhere.
+
+# Setup
+
+## Libraries
+
+The following libraries are used for in this R markdown document.
+
+```{r "Libraries", warning = FALSE, message = FALSE}
+library(sf)
+library(tidyverse)
+library(rgeoboundaries)
+library(osmextract)
+library(tmap)
+library(kableExtra)
+library(lubridate)
+library(DT)
+
+```
+
+## Data acquisition & preprocess
+
+We use free and open speed traffic data from Uber for Nairobi, available here: [https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2019&tp[q]=1](https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp%5By%5D=2019&tp%5Bq%5D=1){.uri}
+
+Uber provides a toolkit software via npm to generate the respective road segments in a geo format. The package is available here: <https://www.npmjs.com/package/movement-data-toolkit>. We generated the road segments as geojson.
+
+**Important**: Uber movement data covers the period 2018-2020. Via the attribute `osm_way_id` the speed traffic information can be linked to the OpenStreetMap (OSM) road network. It is not clear how well the ids from the covered period match with the current OSM data. OSM ids are stable when attributes or the geometry of a object is changed. Howevery newly added data and deleted objects are potentially ommitted when using uber traffic information from years ago but current OSM road network data.
+
+```{r "Data Loading", warning=FALSE, message=FALSE}
+#uber <- read_csv("movement-speeds-quarterly-by-hod-nairobi-2018-Q1.csv")
+#uber_jan <- read_csv("movement-speeds-hourly-nairobi-2019-1.csv")
+#uber_april <- read_csv("movement-speeds-hourly-nairobi-2019-4.csv")
+nairobi_roads <- st_read("nairobi_2019.geojson")
+st_crs(nairobi_roads) <- 4326
+
+```
+
+We are aggregating and averaging road segment speeds across the semester and holiday periods
+
+
+```{r "Set School and Holiday dfs"}
+path <- "movement-speed/"
+
+speed_files <- list.files(path=path, pattern="movement-speeds-hourly-nairobi-2019-.*\\.csv", recursive=TRUE, full.names=TRUE)
+
+# Read the files into a list of data frames
+df_list <- lapply(speed_files, read.csv)
+
+# Combine the data frames in the list into one data frame
+year_df <- do.call(rbind, df_list)
+
+```
+
+```{r}
+#saveRDS(year_df, "year_df.rds")
+#year_df <- readRDS("year_df.rds")
+```
+
+
+```{r}
+whole_year <- data.frame(
+  date = seq(as.Date("2019-01-01"), as.Date("2019-12-31"), by = "day")
+) |>
+  mutate(
+    weekday = wday(date, label = TRUE),
+    day = day(date),
+    month = month(date)
+  ) |>
+  filter(
+    !(weekday %in% c("Sat", "Sun")) &
+    !(date >= as.Date("2019-02-18") & date <= as.Date("2019-02-24")) &
+    !(date >= as.Date("2019-06-17") & date <= as.Date("2019-06-23")) &
+    !(date >= as.Date("2019-11-04") & date <= as.Date("2019-11-29")) # remove midterm breaks and exam period
+  )
+
+# Define the school semesters
+school_periods <- whole_year |>
+  mutate(
+    status = case_when(
+      (date >= as.Date("2019-01-02") & date <= as.Date("2019-04-05")) ~ "semester1",
+      (date >  as.Date("2019-04-05") & date <  as.Date("2019-04-29")) ~ "holiday1",
+      (date >= as.Date("2019-04-29") & date <= as.Date("2019-08-02")) ~ "semester2",
+      (date >  as.Date("2019-08-02") & date <  as.Date("2019-08-26")) ~ "holiday2",
+      (date >= as.Date("2019-08-26") & date <= as.Date("2019-10-25")) ~ "semester3",
+      (date >  as.Date("2019-10-25")) ~ "holiday3",
+      TRUE ~ "other" # this is just a catch-all; remove if not needed
+    )
+  )
+
+periods <- split(school_periods, school_periods$status)
+
+```
+
+
+## Filtering and processing
+
+```{r}
+
+year_avg <- year_df |>
+  group_by(hour, segment_id, start_junction_id, end_junction_id, 
+           osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
+  dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+
+```
+
+
+```{r}
+filter_and_aggregate <- function(df, date_df) {
+  df |>
+    filter(day %in% date_df$day & month %in% date_df$month) |> 
+    group_by(hour, segment_id, start_junction_id, end_junction_id, 
+             osm_way_id, osm_start_node_id, osm_end_node_id)  |>  
+    dplyr::summarise(mean_speed_kph = mean(speed_kph_mean, na.rm = TRUE), .groups = "drop")
+}
+
+# Applying filter_and_aggregate for each period
+results <- lapply(periods, filter_and_aggregate, df = year_df)
+
+# Adding period names to each dataframe in results
+results <- mapply(function(df, period_name) {
+  df$Period <- period_name
+  return(df)
+}, results, names(results), SIMPLIFY = FALSE)
+
+# Convert results to separate dataframes
+
+list2env(results, envir = .GlobalEnv) ## just use results and don't use list2env above
+```
+
+```{r}
+rm(whole_year, df_list, periods, year_df, school_periods, other)
+```
+
+```{r}
+## just use results and don't use list2env above
+join_fields <- c("hour","start_junction_id" , "end_junction_id", 
+                 "osm_start_node_id", "osm_end_node_id", 
+                 "segment_id", "osm_way_id")
+
+# Combine all your dataframes in a list
+all_dfs <- list(semester1, semester2, semester3, holiday1, holiday2, holiday3, year_avg)
+
+# Perform iterative inner_join
+matched_roads <- Reduce(function(x, y) inner_join(x, y, by = join_fields), all_dfs)
+matched_roads <- matched_roads |> 
+  select(join_fields)
+
+
+# Extract each dataframe from the list
+semester1 <- inner_join(semester1, matched_roads)
+semester2 <- inner_join(semester2, matched_roads)
+semester3 <- inner_join(semester3, matched_roads)
+holiday1  <- inner_join(holiday1, matched_roads)
+holiday2  <- inner_join(holiday2, matched_roads)
+holiday3  <- inner_join(holiday3, matched_roads)
+year_avg  <- inner_join(year_avg, matched_roads)
+```
+
+```{r}
+rm(all_dfs, other, matched_roads)
+```
+
+## Hourly boxplots
+
+```{r}
+combined_datasets <- list(
+  combined_school = rbind(semester1, semester2, semester3),
+  combined_holiday = rbind(holiday1, holiday2),
+  combined_period1 = rbind(semester1, holiday1),
+  combined_period2 = rbind(semester2, holiday2),
+  combined_period3 = rbind(semester3, holiday3),
+  combined_semesters = rbind(semester1, semester2, semester3),
+  combined_holidays = rbind(holiday1, holiday2)
+)
+
+# All combined datasets into one dataframe
+combined_average <- do.call(rbind, combined_datasets)
+
+# Create a plotting function
+plot_comparison <- function(data, periods) {
+  # Assign colors dynamically based on periods
+  color_values <- c("firebrick1", "dodgerblue3", "forestgreen")[seq_along(periods)]
+  colors <- setNames(color_values, periods)
+  
+  data |> 
+    filter(Period %in% periods) |> 
+    ggplot(aes(x = factor(hour), y = mean_speed_kph, fill = Period)) +
+    geom_boxplot(alpha = 0.5, outlier.shape = NA) +
+    theme_classic() +
+    scale_fill_manual(values = colors) + 
+    labs(x = "Hour of the Day",
+         y = "Mean Speed kph",
+         fill = "Period")
+}
+
+# Render plots iteratively
+plots <- list(
+  plot1 = plot_comparison(combined_average, c("semester1", "holiday1")),
+  plot2 = plot_comparison(combined_average, c("semester2", "holiday2")),
+  plot3 = plot_comparison(combined_average, c("semester3", "holiday3")),
+  plot4 = plot_comparison(combined_average, c("semester1", "semester2", "semester3")),
+  plot5 = plot_comparison(combined_average, c("holiday1", "holiday2", "holiday3")),
+  plot6 = plot_comparison(combined_average, c("combined_school", "combined_holiday"))
+)
+
+```
+
+```{r}
+# Print each plot
+lapply(plots, print)
+
+# Clear memory
+rm(plots)
+gc()
+```
+
+## Morning and afternoon splits
+
+```{r}
+# Define a function to obtain morn and afternoon periods
+get_time_periods <- function(df) {
+  list(
+    morn = df |> 
+      filter(hour %in% c(6,7,8)) |> 
+      group_by(segment_id, start_junction_id, end_junction_id, 
+               osm_way_id, osm_start_node_id, osm_end_node_id) |>  
+      dplyr::summarise(mean_speed_kph = mean(mean_speed_kph, na.rm = TRUE), .groups = "drop"),
+    
+    afternoon = df |> 
+      filter(hour %in% c(15,16,17)) |> 
+      group_by(segment_id, start_junction_id, end_junction_id, 
+               osm_way_id, osm_start_node_id, osm_end_node_id) |>  
+      dplyr::summarise(mean_speed_kph = mean(mean_speed_kph, na.rm = TRUE), .groups = "drop")
+  )
+}
+
+# Apply the function on all relevant dataframes
+combined_school_split <- get_time_periods(combined_datasets$combined_school)
+combined_holiday_split <- get_time_periods(combined_datasets$combined_holiday)
+
+semester1_split <- get_time_periods(semester1)
+semester2_split <- get_time_periods(semester2)
+semester3_split <- get_time_periods(semester3)
+
+holiday1_split <- get_time_periods(holiday1)
+holiday2_split <- get_time_periods(holiday2)
+holiday3_split <- get_time_periods(holiday3)
+
+year_split <- get_time_periods(year_avg)
+```
+
+```{r}
+rm(semester1, semester2, semester3, holiday1, holiday2, holiday3, combined_average, combined_datasets)
+```
+
+## Speed difference calcs
+
+```{r}
+join_fields <- join_fields[-which(join_fields == "hour")]
+
+
+calculate_diff <- function(df1, df2, new_col_name) {
+  # Ensure that the provided data frames are indeed data frames
+  df1 <- as.data.frame(df1)
+  df2 <- as.data.frame(df2)
+
+  if(is.null(df1) || is.null(df2)) {
+    stop("One of the data frames provided to 'calculate_diff' is NULL.")
+  }
+
+  # Compute the difference and clean the resulting data frame
+  result <- df1 |>
+    left_join(df2, by = join_fields, suffix = c(".x", ".y")) |>
+    mutate(!!new_col_name := `mean_speed_kph.y` - `mean_speed_kph.x`) |>
+    filter(!is.na(!!sym(new_col_name))) 
+
+  return(result)
+}
+
+```
+
+
+```{r}
+## semester 1
+semester1_split$morn <- semester1_split$morn |> 
+  calculate_diff(year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+semester1_split$morn <- calculate_diff(semester1_split$morn, holiday1_split$morn, "kph_diff_hol")|> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+semester1_split$morn <- calculate_diff(semester1_split$morn, combined_holiday_split$morn, "kph_diff_fhol")|> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+semester1_split$afternoon <- calculate_diff(semester1_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester1_split$afternoon <- calculate_diff(semester1_split$afternoon, holiday1_split$afternoon, "kph_diff_hol")|> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester1_split$afternoon <- calculate_diff(semester1_split$afternoon, combined_holiday_split$afternoon, "kph_diff_fhol")|> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+
+## semester 2
+semester2_split$morn <- calculate_diff(semester2_split$morn, year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester2_split$morn <- calculate_diff(semester2_split$morn, holiday2_split$morn, "kph_diff_hol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester2_split$morn <- calculate_diff(semester2_split$morn, combined_holiday_split$morn, "kph_diff_fhol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+semester2_split$afternoon <- calculate_diff(semester2_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester2_split$afternoon <- calculate_diff(semester2_split$afternoon, holiday2_split$afternoon, "kph_diff_hol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester2_split$afternoon <- calculate_diff(semester2_split$afternoon, combined_holiday_split$afternoon, "kph_diff_fhol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+## semester 3
+semester3_split$morn <- calculate_diff(semester3_split$morn, year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester3_split$morn <- calculate_diff(semester3_split$morn, holiday3_split$morn, "kph_diff_hol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester3_split$morn <- calculate_diff(semester3_split$morn, combined_holiday_split$morn, "kph_diff_fhol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+semester3_split$afternoon <- calculate_diff(semester3_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester3_split$afternoon <- calculate_diff(semester3_split$afternoon, holiday3_split$afternoon, "kph_diff_hol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+semester3_split$afternoon <- calculate_diff(semester3_split$afternoon, combined_holiday_split$afternoon, "kph_diff_fhol") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+
+## holdays
+holiday1_split$morn <- calculate_diff(holiday1_split$morn, year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+holiday2_split$morn <- calculate_diff(holiday2_split$morn, year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+holiday3_split$morn <- calculate_diff(holiday3_split$morn, year_split$morn, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+holiday1_split$afternoon <- calculate_diff(holiday1_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+holiday2_split$afternoon <- calculate_diff(holiday2_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+holiday3_split$afternoon <- calculate_diff(holiday3_split$afternoon, year_split$afternoon, "kph_diff_year") |> 
+  select(-c(mean_speed_kph.y)) |> 
+  rename(mean_speed_kph = mean_speed_kph.x)
+
+```
+
+## Spatial join to Nairobi roads
+
+
+```{r}
+semester3_split$afternoon <- semester3_split$afternoon |> 
+        left_join(nairobi_roads, by = c("osm_start_node_id" = "osmstartnodeid", "osm_end_node_id" = "osmendnodeid")) |> 
+  st_as_sf()
+
+st_write(semester3_split$afternoon, "semester3_afternoon.gpkg")
+
+```
+
+## ors output
+
+```{r}
+ors_df <- function(df, quarter) {
+  df <- df  |>  
+    mutate(year = 2019,
+           quarter = quarter,
+           speed_kph_stddev = 1,
+           speed_kph_mean = 1)  |>   
+    rename(speed_kph_p50 = mean_speed_kph) |> 
+    select(-c("segment_id", "start_junction_id", "end_junction_id", 
+              "kph_diff_hol", "kph_diff_fhol", "kph_diff_year")) |> 
+    slice(rep(1:n(), each = 3)) |> 
+    mutate(hour_of_day = rep(6:8, length.out = n())) |> 
+    select(c("year", "quarter", "hour_of_day", "osm_way_id", 
+             "osm_start_node_id", "osm_end_node_id", 
+             "speed_kph_mean", "speed_kph_stddev", "speed_kph_p50"))
+  return(df)
+}
+
+
+ors_holdf <- function(df, quarter) {
+  df <- df  |>  
+    mutate(year = 2019,
+           quarter = quarter,
+           speed_kph_stddev = 1,
+           speed_kph_mean = 1)  |>   
+    rename(speed_kph_p50 = mean_speed_kph) |> 
+    select(-c("segment_id", "start_junction_id", "end_junction_id", 
+              "kph_diff_year")) |> 
+    slice(rep(1:n(), each = 3)) |> 
+    mutate(hour_of_day = rep(6:8, length.out = n())) |> 
+    select(c("year", "quarter", "hour_of_day", "osm_way_id", 
+             "osm_start_node_id", "osm_end_node_id", 
+             "speed_kph_mean", "speed_kph_stddev", "speed_kph_p50"))
+  return(df)
+}
+```
+
+```{r}
+df_list <- list(
+  "semester1_morn_ors" = ors_df(semester1_split$morn, 1),
+  "semester1_afternoon_ors" = ors_df(semester1_split$afternoon, 1),
+  
+  "semester2_morn_ors" = ors_df(semester2_split$morn, 2),
+  "semester2_afternoon_ors" = ors_df(semester2_split$afternoon, 2),
+  
+  "semester3_morn_ors" = ors_df(semester3_split$morn, 3),
+  "semester3_afternoon_ors" = ors_df(semester3_split$afternoon, 3),
+
+  "holiday1_morn_ors" = ors_holdf(holiday1_split$morn, 1),
+  "holiday1_afternoon_ors" = ors_holdf(holiday1_split$afternoon, 1),
+  
+  "holiday2_morn_ors" = ors_holdf(holiday2_split$morn, 2),
+  "holiday2_afternoon_ors" = ors_holdf(holiday2_split$afternoon, 2),
+
+  "holiday3_morn_ors" = ors_holdf(holiday3_split$morn, 4),
+  "holiday3_afternoon_ors" = ors_holdf(holiday3_split$afternoon, 4)
+)
+
+# Loop through the list and write each dataframe to a CSV
+for (name in names(df_list)) {
+  write.csv(df_list[[name]], paste0(name, ".csv"), row.names = FALSE)
+}
+
+
+```
+
+
+```{r}
+write_csv()
+```
+
