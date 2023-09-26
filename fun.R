@@ -36,7 +36,7 @@ parse_ors_response <- function(res) {
     result
 }
 
-get_route <- function(origin, dest, arrival) {
+get_route <- function(origin, dest, arrival, verbose) {
     get_ors_response(
         origin_coords = origin |> st_coordinates() |> as.numeric(),
         dest_coords = dest |> st_coordinates() |> as.numeric(),
@@ -46,11 +46,12 @@ get_route <- function(origin, dest, arrival) {
 }
 
 get_routes <- function(
-        origins, 
-        destinations, 
-        origin_ids, 
-        dest_ids, 
-        arrivals
+        origins,
+        origin_ids,
+        destinations = origins, 
+        dest_ids = origin_ids, 
+        arrivals,
+        ...
 ) {
     stopifnot(
         length(origins) == length(origin_ids),
@@ -65,8 +66,8 @@ get_routes <- function(
         arrival = arrivals
     )
     ids <- expand.grid(
-        origin_id = origin_ids, 
-        dest_id = dest_ids, 
+        origin_id = origin_ids,
+        dest_id = dest_ids,
         requested_arrival = arrivals
     )
     
