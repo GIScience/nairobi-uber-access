@@ -1,17 +1,23 @@
+# Head ---------------------------------
+# purpose: Script to prepare all datasets
+# author: Marcel
+#
+#
+#1 Libraries ---------------------------------
 
 library(httr)
-
 library(sf)
 library(osmdata)
 library(mapview)
 library(glue)
-library(plyr)
 library(dplyr)
 library(tidyverse)
 library(tictoc)
 library(googlePolylines)
 
 
+
+#2 Functions ---------------------------------
 
 gp2sf <- function(gp) {
   gp |>
@@ -27,6 +33,16 @@ gp2sf <- function(gp) {
     pull(1)
 }
 
+#3 setup ---------------------------------
+
+if (!dir.exists("data")) {
+  dir.create("data")
+}
+
+
+#4 Prep and preprocess data ---------------------------------
+
+# Nairobi Boundary
 if (!file.exists("data/nairobi_boundary.gpkg")) {
   nairobi <- opq(bbox = 'Nairobi, Kenya') |>
     add_osm_feature(key = 'name', value = 'Nairobi') |>
@@ -34,47 +50,93 @@ if (!file.exists("data/nairobi_boundary.gpkg")) {
     osmdata_sf()
   nairobi_boundary <- nairobi$osm_multipolygons
 
-
-  #library(rgeoboundaries)
-  #nairobi_boundary <- gb_adm1("Kenya") |> filter(shapeName=="Nairobi")
-
   nairobi_boundary |> st_write("data/nairobi_boundary.gpkg", append=F)
 } else {
-  nairobi_boundary <- st_read("data/nairobi_boundary.gpkg")
+  nairobi_boundary <- st_read("data/nairobi_boundary.gpkg", quiet=T)
 }
 
+# Nairobi Wards
+# DL from HDX: https://data.humdata.org/dataset/administrative-wards-in-kenya-1450
+if (!file.exists("data/Kenya_Wards/kenya_wards.shp")) {
+  stop("Sorry no option to auto dl the Wards Dataset.\nVisit  https://data.humdata.org/dataset/administrative-wards-in-kenya-1450 for to download\nand unzip it into data/")
+} else {
+  kenya_wards <- st_read("data/Kenya_Wards/kenya_wards.shp", quiet=T)
+}
 
-#kenya_wards <- gb_adm4("Kenya")
-kenya_wards <- st_read("data/Kenya_Wards/kenya_wards.shp")
-kenya_wards <- kenya_wards |> st_make_valid()
-kenya_wards$centroid <- kenya_wards |> st_point_on_surface()
+# Add cenroid for wards
+kenya_wards <- kenya_wards |>
+  st_make_valid()
+kenya_wards$centroid <- kenya_wards |>
+  st_point_on_surface()
 
-nairobi_boundary_buff <- nairobi_boundary |> st_transform(32737) |> st_buffer(10000) |> st_transform(4326)
+# Buffer bounday by 5km
+nairobi_boundary_buff <- nairobi_boundary |>
+  st_transform(32737) |>
+  st_buffer(5000) |>
+  st_transform(4326)
 
-nairobi_extent <- nairobi_boundary |> st_bbox() |> st_as_sfc() |> st_set_crs( st_crs(nairobi_boundary))
+# Create extent sf object
+nairobi_extent <- st_sf(
+  geometry = nairobi_boundary |>
+    st_bbox() |>
+    st_as_sfc() |>
+    st_set_crs(st_crs(nairobi_boundary)))
 
-hex_grid <- nairobi_boundary |> st_transform(32737) |>  st_make_grid(cellsize = 5000, square = F) |> st_transform(4326)
-hex_grid <- st_sf(geom=hex_grid)
+# Create hexagonal grid sf object
+hex_grid <- st_sf(
+  geometry = nairobi_boundary |>
+    st_transform(32737) |>
+    st_make_grid(cellsize = 2000, square = F) |>
+    st_transform(4326)
+)  |> st_filter(nairobi_boundary)
 
-hex_grid <- hex_grid |> st_filter(nairobi_boundary)
+hex_grid <-
+  st_sf(
+    hex_id = row_number(hex_grid),
+    geometry = hex_grid$geom,
+    centroid = st_centroid(hex_grid$geom)
+  )
 
-hex_grid <- st_sf(rnr=row_number(hex_grid), geom=hex_grid$geom, centroid=st_centroid(hex_grid$geom))
-
-nrow(hex_grid)
-nrow(kenya_wards)
-
-kenya_wards
-
-hex_grid_centroid <- st_sf(rnr=hex_grid$rnr, geom=hex_grid$centroid)
+# Join ward names to grid
+hex_grid_centroid <-
+  st_sf(hex_id = hex_grid$hex_id, geometry = hex_grid$centroid)
 hex_grid_centroid <- hex_grid_centroid |>  st_join(kenya_wards)
-hex_grid <- hex_grid |> left_join(hex_grid_centroid |> data.frame() |> select(c(rnr,gid,county,subcounty,ward)), by = "rnr")
-
-nrow(hex_grid)
+hex_grid <-
+  hex_grid |> left_join(hex_grid_centroid |> data.frame() |> select(c(hex_id, gid, county, subcounty, ward)), by = "hex_id")
 
 plot(hex_grid["ward"] |> st_geometry(), lwd=.1)
 plot(nairobi_boundary |> st_geometry(), add=T)
 
-#st_write(hex_grid, "hex_grid.gpkg", append=F)
+
+st_write(hex_grid, "hex_grid.gpkg", append=F)
+
+
+# Get schools
+
+# TODO check better ways to identify schools
+
+# osm_schools <- opq(bbox = 'Nairobi, Kenya') |>
+#   add_osm_feature(key = 'amenity', value = 'school') |>
+#   osmdata_sf()
+#
+# # How many school points do not overlap with school polygons
+# osm_schools$osm_points |>
+#   filter(!st_intersects(osm_schools$osm_polygons$geometry
+#                         |> st_union(), sparse = F)) |>
+#   nrow()
+#
+# # How many school polygons do not overlap with school multipolygons/relations
+# osm_schools$osm_polygons |>
+#   st_point_on_surface() |>
+#   filter(!st_intersects(osm_schools$osm_multipolygons$geometry |>
+#                           st_union(), sparse = F)) |>
+#   nrow()
+#
+# schools <- osm_schools$osm_polygons |>
+#   st_point_on_surface() |>
+#   st_filter(nairobi_boundary)
+
+
 
 
 tic.clear()
@@ -90,7 +152,7 @@ for (i in 1:n) {
   origin <- hex_grid[i,]
 
   #for (t in nrow(hex_grid):1) {
-  for (t in nrow(hex_grid):i+1) {
+  for (t in nrow(hex_grid):(i+1)) {
     #t <- 264
     if (i == t) {next}
 
