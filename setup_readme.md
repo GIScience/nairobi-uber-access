@@ -44,7 +44,7 @@ services:
 
 Make changes to the following files:
 
-_openrouteservice/src/test/resources/ors-config.json_
+_openrouteservice/src/main/resources/ors-config-sample.json_
 
 Line 206
 
@@ -52,13 +52,14 @@ Line 206
 ...
 }
 "ext_storages": {
-                "UberTraffic": {
-                  "enabled": true,
-                  "movement_data": "./src/main/files/uber_traffic/movement-speeds-hourly-nairobi-2020-1.csv",
-                  "output_log": true
-                },
-                 "WayCategory": {},
-                 "HeavyVehicle": {
+    "UberTraffic": {
+        "enabled": true,
+         "movement_data": "/home/ors/ors-core/data/uber_traffic.csv",
+         "output_log": true
+    },
+    "WayCategory": {},
+    "HeavyVehicle": {},
+    "WaySurfaceType": {},
 ...
 ```
 
