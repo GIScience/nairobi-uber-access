@@ -16,7 +16,7 @@ get_ors_response <- function(
         instructions = FALSE
     ) |> jsonlite::toJSON(auto_unbox = TRUE)
 
-    res <- POST(url = url, body = body, add_headers(headers))
+    POST(url = url, body = body, add_headers(headers))
 }
 
 parse_ors_response <- function(res) {
@@ -36,7 +36,7 @@ parse_ors_response <- function(res) {
     result
 }
 
-get_route <- function(origin, dest, arrival, verbose) {
+get_route <- function(origin, dest, arrival) {
     get_ors_response(
         origin_coords = origin |> st_coordinates() |> as.numeric(),
         dest_coords = dest |> st_coordinates() |> as.numeric(),
