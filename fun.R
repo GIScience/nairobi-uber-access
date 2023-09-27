@@ -9,7 +9,6 @@ get_ors_response <- function(
         arrival, 
         url = "http://localhost:8080/ors/v2/directions/driving-car"
 ) {
-    # TODO: check if content-type form is available
     headers = c('Content-Type' = 'application/json')
     
     body <- list(
@@ -52,7 +51,7 @@ get_routes <- function(
         destinations = origins, 
         dest_ids = origin_ids, 
         arrivals,
-        ...
+        progress = FALSE # works only on multisession plan
 ) {
     stopifnot(
         length(origins) == length(origin_ids),
@@ -71,9 +70,10 @@ get_routes <- function(
         dest_id = dest_ids,
         requested_arrival = arrivals
     )
-    
+
     grid |>
-        future_pmap(get_route) |>
+        future_pmap(get_route, .progress = progress) |>
         reduce(bind_rows) |>
         bind_cols(ids)
 }
+
