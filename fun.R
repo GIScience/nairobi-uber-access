@@ -9,6 +9,7 @@ get_ors_response <- function(
         arrival, 
         url = "http://localhost:8080/ors/v2/directions/driving-car"
 ) {
+    # TODO: check if content-type form is available
     headers = c('Content-Type' = 'application/json')
     
     body <- list(
@@ -25,10 +26,11 @@ parse_ors_response <- function(res) {
         result <- data.frame(status = res$status_code)
     } else {
         json_resp <- res$content |> rawToChar() |> jsonlite::fromJSON()
-        result <- json_resp$routes |> 
-            as.data.frame() |> 
-            mutate(status = res$status_code) |>
-            unnest(summary)
+        result <- as.data.frame(json_resp$routes)
+        result$status <- res$status_code
+        result$distance <- result$summary$distance
+        result$duration <- result$summary$duration
+        result$summary <- NULL
     }
     result
 }
