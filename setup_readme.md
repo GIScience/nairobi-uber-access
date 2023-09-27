@@ -33,8 +33,8 @@ services:
       - ./logs/ors:/home/ors/ors-core/logs/ors
       - ./logs/tomcat:/home/ors/tomcat/logs
       - ./conf:/home/ors/ors-conf
-      - ./nairobi_2018_Q2.osm.pbf:/home/ors/ors-core/data/osm_file.pbf
-      - ./movement-speeds-quarterly-by-hod-nairobi-2018-Q2.csv:/home/ors/ors-core/data/uber_traffic.csv
+      - ./nairobi_2019_06.osm.pbf:/home/ors/ors-core/data/osm_file.pbf
+      - ./school_morn_ors.csv:/home/ors/ors-core/data/uber_traffic.csv
       #- ./your_osm.pbf:/home/ors/ors-core/data/osm_file.pbf
     environment:
       - BUILD_GRAPHS=False  # Forces the container to rebuild the graphs, e.g. when PBF is changed
@@ -86,15 +86,19 @@ https://osm-internal.download.geofabrik.de/africa/kenya.html
 
 `wget https://osm-internal.download.geofabrik.de/africa/kenya-internal.osh.pbf --output-document=docker/kenya-internal.osh.pbf`
 
-`osmium time-filter -o kenya_2018_Q2.osm.pbf kenya-internal.osh.pbf 2018-06-30T00:00:00Z`
+`osmium time-filter -o kenya_2019_06.osm.pbf kenya-internal.osh.pbf 2019-06-30T00:00:00Z`
 
-`osmium extract -b 36.664702,-1.444882,37.104873,-1.160675 kenya_2018_Q2.osm.pbf -o nairobi_2018_Q2.osm.pbf --overwrite`
+`osmium extract -b 36.619794,-1.490089,37.149790,-1.115470 kenya_2019_06.osm.pbf -o nairobi_2019_06.osm.pbf --overwrite`
 
 
 
 ## Download Uber traffic data 
 
 Get the _Quarterly Speeds Statistics by Hour of Day (Q2 2018)_
+
+**For our analysis we use preprocessed speed values**
+
+Available here https://heibox.uni-heidelberg.de/seafhttp/files/0058862b-858b-43b7-a5cf-a072f678e229/nairobi_ors.zip
 
 https://movement.uber.com/cities/nairobi/downloads/speeds?lang=en-US&tp[y]=2018&tp[q]=2
 
