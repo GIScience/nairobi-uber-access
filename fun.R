@@ -27,10 +27,7 @@ parse_ors_response <- function(res) {
         json_resp <- res$content |> rawToChar() |> jsonlite::fromJSON()
         result <- json_resp$routes |> 
             as.data.frame() |> 
-            mutate(
-                geom = gp2sf(geometry),
-                status = res$status_code
-            ) |>
+            mutate(status = res$status_code) |>
             st_sf(crs = "EPSG:4326") |>
             unnest(summary)
     }
