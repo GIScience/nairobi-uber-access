@@ -28,7 +28,6 @@ parse_ors_response <- function(res) {
         result <- json_resp$routes |> 
             as.data.frame() |> 
             mutate(status = res$status_code) |>
-            st_sf(crs = "EPSG:4326") |>
             unnest(summary)
     }
     result
