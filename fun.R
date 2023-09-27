@@ -1,6 +1,7 @@
 library(httr)
 library(sf)
 library(tidyverse)
+library(furrr)
 
 get_ors_response <- function(
         origin_coords, 
@@ -45,6 +46,8 @@ get_route <- function(origin, dest, arrival) {
         parse_ors_response()
 }
 
+# Call `future::plan(multisession, workers = {n_workers})` before `get_routes`
+# for parallel processing of routes
 get_routes <- function(
         origins,
         origin_ids,
@@ -72,7 +75,7 @@ get_routes <- function(
     )
     
     grid |>
-        pmap(get_route) |>
+        future_pmap(get_route) |>
         reduce(bind_rows) |>
         bind_cols(ids)
 }
