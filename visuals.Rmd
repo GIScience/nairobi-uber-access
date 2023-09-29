@@ -1,0 +1,107 @@
+---
+title: "Nairobi Uber Visuals"
+author: "Charles Hatfield & Marcel Reinmuth"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float:
+      collapsed: false
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, message=FALSE, warning=FALSE)
+```
+
+**Setup**
+
+```{r "Libraries", warning = FALSE, message = FALSE}
+library(sf)
+library(tidyverse)
+library(rgeoboundaries)
+library(osmextract)
+library(tmap)
+library(kableExtra)
+library(lubridate)
+library(DT)
+
+
+hex_grid <- st_read("/Users/charlie/Downloads/hex_grid_join172.gpkg")
+nairobi_roads <- st_read("/Users/charlie/WRI_Nairobi/data/semhol_diff.gpkg")
+```
+# Uber OSM Analysis
+
+```{r rstudio-create-Rproj1, out.width = '100%', echo=FALSE, fig.cap = 'Match between OSM and Uber road segments.'}
+knitr::include_graphics("figures/uber_osm_match.png")
+```
+
+```{r rstudio-create-Rproj2, out.width = '100%', echo=FALSE, fig.cap = 'Total OSM road length for Nairobi.'}
+knitr::include_graphics("figures/osm_roadnetwork_total.png")
+```
+
+```{r rstudio-create-Rproj3, out.width = '100%', echo=FALSE, fig.cap = 'OSM highway type coverage'}
+knitr::include_graphics("figures/uber_osm_coverage.png")
+```
+
+
+# Road Speeds
+
+
+## Daily Mean Road Speeds
+
+```{r rstudio-create-Rproj4, out.width = '100%', echo=FALSE, fig.cap = 'Daily mean road speeds during the morning rush hour 6-9am with semester and holiday means and standard errors. Semester and holiday means and standard errors were calculated on all road speeds for all segments between the 6-9 am window for each respective period.'}
+knitr::include_graphics("figures/timeseries_full.png")
+```
+
+## Anomalies
+
+
+```{r "Extreme days", warning = FALSE, message = FALSE}
+extreme20_days <- read_csv("data/extreme20_daysNairobi.csv")
+print(extreme20_days)
+
+```
+
+##Mean Road speeds by Road Type
+
+```{r rstudio-create-Rproj5, out.width = '100%', echo=FALSE, fig.cap = 'Daily mean road speeds split by OSM highway type.'}
+knitr::include_graphics("figures/timeseries_roadtype.png")
+```
+
+# Maps 
+## Map of mean road speed difference between holiday and school semester period 
+
+
+
+```{r rstudio-create-Rproj6, out.width = '100%', echo=FALSE, fig.cap = 'Facet map of mean speed differences for each road segment between the semester and holiday periods. Facets are for all road types, primary and trunk, secondary, and tertiary and residential.'}
+knitr::include_graphics("figures/facet_roadtype.png")
+```
+## Map of travel time loss between school semester and holiday throughout the network
+
+
+```{r rstudio-create-Rproj7, out.width = '100%', echo=FALSE, fig.cap = 'Hexgrid of travel time loss between the semester and holiday period as measured by aggregate seconds lost when routing from the origin hexagon to all other hexagons'}
+knitr::include_graphics("figures/hexgrid.png")
+```
+```{r}
+ 
+tmap_mode("view")
+
+m.1 <- tm_basemap("OpenStreetMap.HOT") +
+  tm_shape(nairobi_roads) +
+  tm_lines(
+    col = "mean_speed_diff",
+    palette = "Spectral",
+    n=5,
+    lwd = 2,
+    breaks = c(-100,-5,-2,2,5,100),
+    popup.vars = c("osmhighway", "mean_speed_diff")
+  )
+
+
+m.1
+
+```
+
