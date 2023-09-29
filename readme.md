@@ -4,7 +4,7 @@ This GitHub repository contains R code for analyzing traffic speed data from Ube
 
 For detailed insights and findings, please refer to our <https://giscience.github.io/nairobi-uber-access/Nairobi_Uber.html>.
 
-Updated Rmarkdown here
+Updated Analsis: <https://giscience.github.io/nairobi-uber-access/visuals.html>.
 
 
 
