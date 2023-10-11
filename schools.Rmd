@@ -1,0 +1,248 @@
+---
+title: "Nairobi School data"
+author: "Marcel Reinmuth"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float:
+      collapsed: false
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(sf)
+library(osmdata)
+library(tmap)
+library(exactextractr)
+library(terra)
+
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, message=FALSE, warning=FALSE)
+```
+
+This document gives insights on school location data available for Nairobi, Kenya.
+
+We look at data from WorldBank and OpenStreetMap (via Overpass API).
+For OpenStreetMap a little processing is necessary due to its datamodel and possibility of dual representation of schools as POI and building footprint. In the following chunk we download the data from OSM and check for overlaps of footprints and POIs. 
+
+```{r Data load & preparation, echo=FALSE}
+nairobi_boundary <- st_read("data/nairobi_boundary.gpkg", quiet=T)
+
+osm_schools <- opq(bbox = st_bbox(nairobi_boundary) |> as.numeric()) |>
+  add_osm_feature(key = 'amenity', value = 'school') |>
+  osmdata_sf()
+
+osm_schools_poi <- osm_schools$osm_points |>
+  filter(amenity=="school")
+
+osm_schools_poly <- osm_schools$osm_polygons |>
+  filter(amenity=="school")
+
+osm_schools_multipoly <- osm_schools$osm_multipolygons |>
+  filter(amenity=="school")
+
+
+# filter out poly overlaps
+osm_schools_poi <- st_filter(osm_schools_poi, osm_schools_poly |> st_union(), .predicate = st_disjoint)
+# filter out multi poly overlaps
+osm_schools_poi <- st_filter(osm_schools_poi, osm_schools_multipoly |> st_union(), .predicate = st_disjoint)
+
+# filter out poly overlaps
+osm_schools_poly <- st_filter(osm_schools_poly, osm_schools_multipoly |> st_union(), .predicate = st_disjoint)
+
+# create point of surfaces
+
+osm_schools <- bind_rows(
+  osm_schools_poi,
+  osm_schools_poly |> st_point_on_surface(),
+  osm_schools_multipoly |> st_point_on_surface()
+)
+
+# read wordlbank school data https://datacatalog.worldbank.org/search/dataset/0038039
+schools_wb <- st_read("data/schools/Schools/Schools.shp", quiet=T)
+hex_grid <- readRDS("hex_grid.rds")
+wpop <- rast("data/ken_ppp_2020_UNadj_constrained.tif")
+
+
+hex_grid$count_wb <- st_intersects(hex_grid, schools_wb |> st_transform(4326)) |> lengths()
+hex_grid$count_osm <- st_intersects(hex_grid, osm_schools) |> lengths()
+hex_grid$count_diff_wb_osm <- hex_grid$count_wb - hex_grid$count_osm
+hex_grid$wpop <- exact_extract(wpop, hex_grid, "sum", progress=F)
+```
+
+
+```{r Numbers}
+osm_schools |> nrow()
+selected_cols <- grep("education|name|osm_id|amenity", names(osm_schools), ignore.case = TRUE)
+osm_schools <- osm_schools |> select(all_of(selected_cols))
+
+osm_schools <- osm_schools |>  st_filter(nairobi_boundary)
+
+
+schools_wb <- schools_wb |>
+  st_transform(4326) |>
+  st_filter(nairobi_boundary)
+
+schools_wb |> names()
+
+# How many schools overlap within different distances
+wb50_osm <- osm_schools |> st_transform(32637) |>
+  st_filter(schools_wb |>
+              st_transform(32637) |>
+              st_buffer(50) |> st_union()) |> nrow()
+
+wb100_osm <- osm_schools |> st_transform(32637) |>
+  st_filter(schools_wb |>
+              st_transform(32637) |>
+              st_buffer(100) |> st_union()) |> nrow()
+
+
+wb500_osm <- osm_schools |> st_transform(32637) |>
+  st_filter(schools_wb |>
+              st_transform(32637) |>
+              st_buffer(500) |> st_union()) |> nrow()
+
+
+wb1000_osm  <- osm_schools |> st_transform(32637) |>
+  st_filter(schools_wb |>
+              st_transform(32637) |>
+              st_buffer(1000) |> st_union()) |> nrow()
+
+osm50_wb <- schools_wb |> st_transform(32637) |>
+  st_filter(osm_schools |>
+              st_transform(32637) |>
+              st_buffer(50) |> st_union()) |> nrow()
+
+osm100_wb <- schools_wb |> st_transform(32637) |>
+  st_filter(osm_schools |>
+              st_transform(32637) |>
+              st_buffer(100) |> st_union()) |> nrow()
+
+
+osm500_wb <- schools_wb |> st_transform(32637) |>
+  st_filter(osm_schools |>
+              st_transform(32637) |>
+              st_buffer(500) |> st_union()) |> nrow()
+
+
+osm1000_wb  <- schools_wb |> st_transform(32637) |>
+  st_filter(osm_schools |>
+              st_transform(32637) |>
+              st_buffer(1000) |> st_union()) |> nrow()
+
+
+```
+
+# Overlap of schools in different datasets
+
+Total amount of schools per dataset.
+
+| Dataset | Total amount of schools |
+|---|---|---|
+| OSM | `r osm_schools |> nrow()` |
+| Worldbank | `r schools_wb |> nrow()` |
+
+
+Overlap by distance from Wordlbank
+
+
+| Coverage of WB  | 50m | % | 100m | % | 500m | % | 1000m | % |
+|---|---|---|---|---|---|---|---|---|
+| OSM | `r wb50_osm` | `r (wb50_osm / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r wb100_osm` | `r (wb100_osm / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r wb500_osm ` | `r (wb500_osm / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r wb1000_osm` | `r (wb1000_osm / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` |
+
+
+Overlap by distance from OpenStreetMap
+
+
+| Coverage of OSM  | 50m | % | 100m | % | 500m | % | 1000m | % |
+|---|---|---|---|---|---|---|---|---|
+| WB | `r osm50_wb` | `r (osm50_wb / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r osm100_wb` | `r (osm100_wb / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r osm500_wb` | `r (osm500_wb / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` | `r osm1000_wb` | `r (osm1000_wb / osm_schools |> nrow() * 100 |> as.numeric()) |> round(2)` |
+
+
+# Comparing locations of schools
+
+```{r Maps 1}
+tmap_mode("view")
+
+m.1 <- tm_basemap("OpenStreetMap") +
+  tm_shape(osm_schools) +
+  tm_dots(
+    col="turquoise",
+    size = .1,
+    border.lwd = 0,
+    popup.vars = c("osm_id", "amenity", "name", "education:students")
+  )
+
+m.2 <- tm_basemap("OpenStreetMap") +
+  tm_shape(schools_wb) +
+  tm_dots(
+    col="firebrick",
+    size = .1,
+    border.lwd = 0,
+    popup.vars = c("SCHOOL_NAM", "LEVEL", "Status", "Source")
+  )
+
+tmap_arrange(m.1,m.2, sync = T)
+
+
+```
+
+# Aggregated on Hex grid
+
+Also added a difference and worldpop map.
+
+```{r Maps 2}
+colrmp <- viridisLite::cividis(7)
+colrmp[1] <- "#FFFFFF"
+
+
+
+tmap_mode("view")
+
+m.1 <- tm_basemap("OpenStreetMap") +
+  tm_shape(hex_grid) +
+  tm_polygons(
+    title = "Schools in WB",
+    col="count_wb",
+    border.lwd = .1,
+    breaks=c(0,1, 10, 20, 30, 50, 100, 150),
+    palette=colrmp
+  )
+
+m.2 <- tm_basemap("OpenStreetMap") +
+  tm_shape(hex_grid) +
+  tm_polygons(
+    title = "Schools in OSM",
+    col="count_osm",
+    border.lwd = .1,
+    breaks=c(0,1, 10, 20, 30, 50, 100, 150),
+    palette=colrmp
+  )
+
+m.3 <- tm_basemap("OpenStreetMap") +
+  tm_shape(hex_grid) +
+  tm_polygons(
+    title = "WB - OSM counts",
+    col="count_diff_wb_osm",
+    breaks=c(-100,-50,-10,-1,0,1,10,50,100),
+    border.lwd = .1,
+    palette="RdBu"
+  )
+
+m.4 <- tm_basemap("OpenStreetMap") +
+  tm_shape(hex_grid) +
+  tm_polygons(
+    title = "Population WorldPop",
+    col="wpop",
+    border.lwd = .1,
+    breaks=c(0, 1, 100, 1000, 10000, 50000, 150000),
+    palette=colrmp
+  )
+
+tmap_arrange(m.1,m.2,m.3,m.4,ncol = 2, nrow = 2, sync = T)
+
+
+```
