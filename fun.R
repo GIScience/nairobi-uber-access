@@ -4,13 +4,13 @@ library(tidyverse)
 library(furrr)
 
 get_ors_response <- function(
-        origin_coords, 
-        dest_coords, 
-        arrival, 
+        origin_coords,
+        dest_coords,
+        arrival,
         url = "http://localhost:8080/ors/v2/directions/driving-car"
 ) {
     headers = c('Content-Type' = 'application/json')
-    
+
     body <- list(
         coordinates = list(origin_coords, dest_coords),
         arrival = arrival,
@@ -48,8 +48,8 @@ get_route <- function(origin, dest, arrival) {
 get_routes <- function(
         origins,
         origin_ids,
-        destinations = origins, 
-        dest_ids = origin_ids, 
+        destinations = origins,
+        dest_ids = origin_ids,
         arrivals,
         progress = FALSE # works only on multisession plan
 ) {
@@ -61,8 +61,8 @@ get_routes <- function(
     )
 
     grid <- expand.grid(
-        origin = origins, 
-        dest = destinations, 
+        origin = origins,
+        dest = destinations,
         arrival = arrivals
     )
     ids <- expand.grid(
@@ -72,8 +72,8 @@ get_routes <- function(
     )
 
     grid |>
-        future_pmap(get_route, .progress = progress) |>
-        reduce(bind_rows) |>
-        bind_cols(ids)
+        future_pmap(get_route, .progress = progress) #>
+        # reduce(bind_rows) |>
+        #  bind_cols(ids)
 }
 
